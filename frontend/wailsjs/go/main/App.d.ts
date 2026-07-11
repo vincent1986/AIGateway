@@ -24,6 +24,8 @@ export function EnsureProxyRouting():Promise<main.ProxyStatus>;
 
 export function FetchProviderModels(arg1:string,arg2:string):Promise<Array<main.FetchModelItem>>;
 
+export function GetActiveGatewayModel():Promise<main.ActiveGatewayModelInfo>;
+
 export function GetProviderPackageStatuses():Promise<Array<main.ProviderPackageStatus>>;
 
 export function GetProxyConfig():Promise<main.ProxyConfig>;
@@ -59,6 +61,8 @@ export function RollbackGateway(arg1:string):Promise<main.ToolConfigStatus>;
 export function SaveProviders(arg1:Array<main.Provider>):Promise<void>;
 
 export function SaveProxyConfig(arg1:main.ProxyConfig):Promise<main.ProxyStatus>;
+
+export function SetActiveGatewayModel(arg1:string):Promise<main.ActiveGatewayModelInfo>;
 
 export function SetModelGroupRouteEnabled(arg1:string,arg2:boolean):Promise<void>;
 

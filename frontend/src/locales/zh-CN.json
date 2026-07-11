@@ -350,5 +350,13 @@
   "modal.country.CN": "中国",
   "modal.country.US": "美国",
   "modal.country.multi": "多国聚合",
-  "modal.country.custom": "自定义"
+  "modal.country.custom": "自定义",
+  "models.hotSwitchHint": "工具固定请求虚拟模型 {virtual}；当前绑定 → {active}。切换只改代理路由，不改写配置文件。",
+  "models.gatewayActive": "网关默认",
+  "models.virtualPin": "工具侧: {virtual}",
+  "models.setActive": "设为网关默认",
+  "models.isActive": "当前默认",
+  "apps.proxyModel": "虚拟模型 {virtual} → 当前 {active}",
+  "apps.hotSwitchHint": "切换后代理将 {virtual} 路由到所选模型，无需重写工具配置。",
+  "toast.hotSwitched": "已热切换：{virtual} → {model}（未修改配置文件）"
 }

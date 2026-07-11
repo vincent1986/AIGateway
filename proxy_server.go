@@ -336,6 +336,20 @@ func (p *proxyServer) handleModels(w http.ResponseWriter, r *http.Request) {
 	}
 	data := make([]item, 0, 32)
 	seen := map[string]bool{}
+	// Stable virtual model first — tools pin this id; proxy hot-switches upstream.
+	active := resolveActiveModelID()
+	data = append(data, item{
+		ID:      gatewayVirtualModel,
+		Object:  "model",
+		OwnedBy: "aigateway",
+	})
+	seen[gatewayVirtualModel] = true
+	// also list aigateway alias for OpenClaw-style provider/model pickers
+	if !seen["aigateway"] {
+		data = append(data, item{ID: "aigateway", Object: "model", OwnedBy: "aigateway"})
+		seen["aigateway"] = true
+	}
+	_ = active // available for clients that inspect owned_by / future fields
 	for _, prov := range providers {
 		for _, m := range prov.Models {
 			if !m.Enabled {
@@ -457,7 +471,7 @@ func (p *proxyServer) forwardOpenAI(w http.ResponseWriter, r *http.Request, open
 			}
 		}
 
-		p.logf("%s %s → %s model=%s up=%s try=%d/%d stream=%v",
+		p.logf("%s %s → %s client_model=%s up=%s try=%d/%d stream=%v",
 			r.Method, openAIPath, prov.Name, model, cand.UpstreamModel, i+1, len(cands), stream)
 
 		req, err := http.NewRequestWithContext(r.Context(), r.Method, upstreamURL, bytes.NewReader(reqBody))

@@ -1,5 +1,21 @@
 export namespace main {
 	
+	export class ActiveGatewayModelInfo {
+	    virtualModel: string;
+	    activeModel: string;
+	    aliases: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new ActiveGatewayModelInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.virtualModel = source["virtualModel"];
+	        this.activeModel = source["activeModel"];
+	        this.aliases = source["aliases"];
+	    }
+	}
 	export class ClaudeDeepSeekRequest {
 	    apiKey: string;
 	    path: string;

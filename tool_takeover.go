@@ -113,7 +113,12 @@ func (a *App) InjectGateway(kind string) (ToolConfigStatus, error) {
 	_ = a.saveOverrides(ov)
 
 	st = a.resolveTool(k)
-	st.Message = fmt.Sprintf("已接管：base_url → %s（后续模型切换在「模型管理」完成）", base)
+	active := resolveActiveModelID()
+	if active == "" {
+		st.Message = fmt.Sprintf("已接管：base_url → %s，模型固定为 %s（请在模型管理中设默认，热切换无需再改配置）", base, gatewayVirtualModel)
+	} else {
+		st.Message = fmt.Sprintf("已接管：base_url → %s，模型=%s → 当前 %s（热切换只改代理，不写配置文件）", base, gatewayVirtualModel, active)
+	}
 	return st, nil
 }
 
@@ -140,12 +145,14 @@ func injectGatewayCodex(content, gatewayBase string) (string, error) {
 	// Drop env_key so Codex won't look for unset AIGATEWAY env vars
 	content = removeProviderField(content, gatewayProviderID, "env_key")
 	content = setTomlTopLevelString(content, "model_provider", gatewayProviderID)
+	// Pin stable virtual model — switch real model via SetActiveGatewayModel (proxy only).
+	content = setTomlTopLevelString(content, "model", gatewayVirtualModel)
 	return content, nil
 }
 
 // injectGatewayClaude rewrites Claude Code ~/.claude/settings.json per official docs:
-// route traffic via ANTHROPIC_BASE_URL (+ AUTH_TOKEN/API_KEY). Model is chosen separately
-// with the "model" field / ANTHROPIC_MODEL (ApplyToolModel).
+// route traffic via ANTHROPIC_BASE_URL (+ AUTH_TOKEN/API_KEY).
+// Model is pinned to virtual aiSwitchModel; hot-switch happens in the proxy only.
 // Do NOT set OPENAI_BASE_URL or top-level apiBaseUrl — Claude Code ignores those.
 func injectGatewayClaude(content, gatewayBase string) (string, error) {
 	var root map[string]any
@@ -166,10 +173,16 @@ func injectGatewayClaude(content, gatewayBase string) (string, error) {
 	if s, _ := env["ANTHROPIC_API_KEY"].(string); strings.TrimSpace(s) == "" {
 		env["ANTHROPIC_API_KEY"] = "aigateway"
 	}
+	// Pin virtual model for hot-switch (no further config edits)
+	env["ANTHROPIC_MODEL"] = gatewayVirtualModel
+	env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = gatewayVirtualModel
+	env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = gatewayVirtualModel
+	env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = gatewayVirtualModel
 	// Clean legacy incorrect keys from earlier AIGateway versions
 	delete(env, "OPENAI_BASE_URL")
 	delete(env, "OPENAI_API_KEY")
 	root["env"] = env
+	root["model"] = gatewayVirtualModel
 	delete(root, "apiBaseUrl")
 	delete(root, "baseUrl")
 	delete(root, "base_url")

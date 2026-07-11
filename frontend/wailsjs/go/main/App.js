@@ -46,6 +46,10 @@ export function FetchProviderModels(arg1, arg2) {
   return window['go']['main']['App']['FetchProviderModels'](arg1, arg2);
 }
 
+export function GetActiveGatewayModel() {
+  return window['go']['main']['App']['GetActiveGatewayModel']();
+}
+
 export function GetProviderPackageStatuses() {
   return window['go']['main']['App']['GetProviderPackageStatuses']();
 }
@@ -116,6 +120,10 @@ export function SaveProviders(arg1) {
 
 export function SaveProxyConfig(arg1) {
   return window['go']['main']['App']['SaveProxyConfig'](arg1);
+}
+
+export function SetActiveGatewayModel(arg1) {
+  return window['go']['main']['App']['SetActiveGatewayModel'](arg1);
 }
 
 export function SetModelGroupRouteEnabled(arg1, arg2) {

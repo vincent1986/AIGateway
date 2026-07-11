@@ -350,5 +350,13 @@
   "modal.country.CN": "Trung Quốc",
   "modal.country.US": "Hoa Kỳ",
   "modal.country.multi": "Đa khu vực",
-  "modal.country.custom": "Tùy chỉnh"
+  "modal.country.custom": "Tùy chỉnh",
+  "models.hotSwitchHint": "Tools pin virtual model {virtual}; currently bound → {active}. Switch only updates proxy routing — no config file writes.",
+  "models.gatewayActive": "Gateway default",
+  "models.virtualPin": "Tools use: {virtual}",
+  "models.setActive": "Set as gateway default",
+  "models.isActive": "Active default",
+  "apps.proxyModel": "Virtual {virtual} → {active}",
+  "apps.hotSwitchHint": "Switch routes {virtual} via the proxy without rewriting tool configs.",
+  "toast.hotSwitched": "Hot-switched: {virtual} → {model} (config files unchanged)"
 }

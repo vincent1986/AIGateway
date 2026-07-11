@@ -35,6 +35,8 @@ import {
   ReorderModelGroupRoutes,
   InjectGateway,
   RollbackGateway,
+  GetActiveGatewayModel,
+  SetActiveGatewayModel,
 } from "../wailsjs/go/main/App";
 
 /** @typedef {{ id: string, name: string, baseUrl: string, apiKey: string, color: string, models: Model[] }} Provider */
@@ -121,6 +123,8 @@ let page = (() => {
 let modelGroups = [];
 let modelsLoading = false;
 let modelsBusy = "";
+/** @type {{ virtualModel?: string, activeModel?: string, aliases?: string[] }} */
+let activeGateway = { virtualModel: "aiSwitchModel", activeModel: "", aliases: [] };
 
 /** @type {null | { total?: any, byDay?: any[], byModel?: any[], byProvider?: any[], recent?: any[] }} */
 let usageStats = null;
@@ -807,33 +811,35 @@ function renderAppCard(st) {
   const kind = st.kind;
   const busy = configsBusy === kind;
   const ok = !!st.found && !!st.exists;
-  const modelLine = st.model
-    ? `<div class="hint" style="margin-top:6px">${t("common.current")}: <code>${escapeHtml(st.model)}</code>${
-        st.modelProvider ? ` · ${escapeHtml(st.modelProvider)}` : ""
-      }</div>`
-    : "";
-  // Model apply for all tools that support ApplyToolModel (codex/claude/openclaw/harness)
+  const virt = activeGateway.virtualModel || "aiSwitchModel";
+  const active = activeGateway.activeModel || "";
+  const modelLine = `<div class="hint" style="margin-top:6px">
+      ${t("apps.proxyModel", { virtual: virt, active: active || t("common.none") })}
+      ${st.model ? ` · ${t("configs.pathLabel")}: <code>${escapeHtml(st.model)}</code>` : ""}
+    </div>`;
+  // Hot-switch via proxy only (SetActiveGatewayModel) — never rewrite tool configs
   const choices = modelChoicesFor(kind);
-  const selectedModel = pendingModel[kind] || st.model || "";
+  const selectedModel = pendingModel[kind] || active || "";
   const modelApply =
     choices.length > 0
       ? `<div class="field" style="margin-top:10px">
-          <label style="font-size:12px;color:var(--text-secondary)">${t("configs.switchModel") || "切换模型"}</label>
+          <label style="font-size:12px;color:var(--text-secondary)">${t("configs.switchModel")}</label>
+          <p class="hint">${t("apps.hotSwitchHint", { virtual: virt })}</p>
           <div class="actions" style="margin-top:4px;flex-wrap:wrap">
-            <select class="select" data-act="model-select" data-kind="${kind}" style="min-width:160px;flex:1">
+            <select class="select" data-act="gateway-model-select" data-kind="${kind}" style="min-width:160px;flex:1">
               <option value="">${t("common.none")}</option>
               ${choices
                 .map(
                   (c) =>
-                    `<option value="${escapeAttr(c.id)}" data-provider="${escapeAttr(c.provider || "")}" ${
-                      c.id === selectedModel || (selectedModel && selectedModel.endsWith("/" + c.id)) ? "selected" : ""
+                    `<option value="${escapeAttr(c.id)}" ${
+                      c.id === selectedModel ? "selected" : ""
                     }>${escapeHtml(c.group ? c.group + " / " : "")}${escapeHtml(c.name || c.id)}</option>`
                 )
                 .join("")}
             </select>
-            <button class="btn btn-sm btn-primary" data-act="apply-model" data-kind="${kind}" ${
+            <button class="btn btn-sm btn-primary" data-act="gateway-model-apply" data-kind="${kind}" ${
               busy || !selectedModel ? "disabled" : ""
-            }>${t("common.apply")}</button>
+            }>${t("models.setActive")}</button>
           </div>
         </div>`
       : "";
@@ -894,6 +900,8 @@ function routeStatusClass(status) {
 }
 
 function renderModelsPage() {
+  const virt = activeGateway.virtualModel || "aiSwitchModel";
+  const active = activeGateway.activeModel || "";
   return `
     <div class="full-page">
       <div class="config-page">
@@ -901,6 +909,12 @@ function renderModelsPage() {
           <div>
             <h2>${t("models.title")}</h2>
             <p>${t("models.desc")} ${t("models.dragHint")}</p>
+            <p class="desc" style="margin-top:6px">
+              ${t("models.hotSwitchHint", {
+                virtual: virt,
+                active: active || t("common.none"),
+              })}
+            </p>
           </div>
           <div class="actions">
             <button class="btn" id="btn-models-refresh" ${modelsLoading ? "disabled" : ""}>
@@ -912,19 +926,28 @@ function renderModelsPage() {
           modelGroups.length
             ? modelGroups
                 .map((g) => {
+                  const gid = g.id || g.ID;
+                  const isActive = active && gid === active;
                   const routes = (g.routes || g.Routes || [])
                     .slice()
                     .sort((a, b) => (a.priority ?? a.Priority ?? 0) - (b.priority ?? b.Priority ?? 0));
                   return `
-            <section class="panel model-group-panel" data-group="${escapeAttr(g.id)}">
+            <section class="panel model-group-panel ${isActive ? "active-gateway" : ""}" data-group="${escapeAttr(gid)}">
               <div class="panel-head">
                 <div>
-                  <h3 class="model-id">${escapeHtml(g.name || g.id)}</h3>
-                  <p class="desc">${routes.length} ${t("models.channels")}</p>
+                  <h3 class="model-id">${escapeHtml(g.name || gid)}
+                    ${isActive ? `<span class="tag default">${t("models.gatewayActive")}</span>` : ""}
+                  </h3>
+                  <p class="desc">${routes.length} ${t("models.channels")} · ${t("models.virtualPin", { virtual: virt })}</p>
+                </div>
+                <div class="actions">
+                  <button class="btn btn-sm ${isActive ? "btn-primary" : ""}" data-act="set-active-model" data-model="${escapeAttr(gid)}" ${modelsBusy || isActive ? "disabled" : ""}>
+                    ${isActive ? t("models.isActive") : t("models.setActive")}
+                  </button>
                 </div>
               </div>
               <div class="panel-body">
-                <div class="route-list" data-group="${escapeAttr(g.id)}">
+                <div class="route-list" data-group="${escapeAttr(gid)}">
                   ${
                     routes.length
                       ? routes
@@ -935,7 +958,7 @@ function renderModelsPage() {
                             const status = r.status || r.Status || "ok";
                             const en = !!(r.enabled ?? r.Enabled);
                             return `
-                    <div class="route-row ${i === 0 ? "primary" : ""}" draggable="true" data-route="${escapeAttr(rid)}" data-group="${escapeAttr(g.id)}">
+                    <div class="route-row ${i === 0 ? "primary" : ""}" draggable="true" data-route="${escapeAttr(rid)}" data-group="${escapeAttr(gid)}">
                       <span class="drag-handle" title="${escapeAttr(t("models.drag"))}">⠿</span>
                       <div class="route-meta">
                         <div class="provider-name">${escapeHtml(r.providerName || r.ProviderName || r.providerId || "")}</div>
@@ -962,6 +985,39 @@ function renderModelsPage() {
   `;
 }
 
+async function loadActiveGateway() {
+  if (!hasBackend() || typeof GetActiveGatewayModel !== "function") return;
+  try {
+    const info = await GetActiveGatewayModel();
+    activeGateway = {
+      virtualModel: info.virtualModel || info.VirtualModel || "aiSwitchModel",
+      activeModel: info.activeModel || info.ActiveModel || "",
+      aliases: info.aliases || info.Aliases || [],
+    };
+  } catch (_) {}
+}
+
+/** Hot-switch proxy routing only — never rewrite tool config files. */
+async function setGatewayActiveModel(modelId) {
+  if (!hasBackend() || typeof SetActiveGatewayModel !== "function") {
+    throw new Error(t("toast.runInWailsShort"));
+  }
+  const info = await SetActiveGatewayModel(modelId);
+  activeGateway = {
+    virtualModel: info.virtualModel || info.VirtualModel || "aiSwitchModel",
+    activeModel: info.activeModel || info.ActiveModel || modelId,
+    aliases: info.aliases || info.Aliases || [],
+  };
+  // keep proxy up
+  if (typeof EnsureProxyRouting === "function") {
+    try {
+      const st = await EnsureProxyRouting();
+      proxyStatus = normalizeProxyStatus(st);
+    } catch (_) {}
+  }
+  return activeGateway;
+}
+
 async function loadModelGroups() {
   if (!hasBackend() || typeof ListModelGroups !== "function") {
     modelGroups = [];
@@ -980,8 +1036,27 @@ async function loadModelGroups() {
 
 function bindModelsEvents() {
   document.getElementById("btn-models-refresh")?.addEventListener("click", async () => {
-    await loadModelGroups();
+    await Promise.all([loadModelGroups(), loadActiveGateway()]);
     render();
+  });
+
+  // Set as gateway default (hot-switch proxy binding — no config file writes)
+  document.querySelectorAll("[data-act='set-active-model']").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const mid = btn.dataset.model;
+      if (!mid) return;
+      modelsBusy = mid;
+      render();
+      try {
+        await setGatewayActiveModel(mid);
+        toast(t("toast.hotSwitched", { model: mid, virtual: activeGateway.virtualModel || "aiSwitchModel" }));
+      } catch (e) {
+        toast(errMsg(e), "err");
+      } finally {
+        modelsBusy = "";
+        render();
+      }
+    });
   });
 
   // enable / disable
@@ -1571,7 +1646,10 @@ function bindShellEvents() {
         loadToolConfigs(false);
       }
       if (page === "models") {
-        loadModelGroups().then(() => render());
+        Promise.all([loadModelGroups(), loadActiveGateway()]).then(() => render());
+      }
+      if (page === "apps" || page === "configs") {
+        loadActiveGateway().then(() => render());
       }
       if (page === "proxy") {
         refreshProxyStatus();
@@ -2154,6 +2232,7 @@ function bindConfigEvents() {
     });
   });
 
+  // Legacy apply-model (if any) → also hot-switch only
   document.querySelectorAll("[data-act='apply-model']").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const kind = btn.dataset.kind;
@@ -2163,37 +2242,41 @@ function bindConfigEvents() {
         sel?.value?.trim() ||
         pendingModel[kind] ||
         "";
-      const provider =
-        document.querySelector(`[data-act='provider-input'][data-kind='${kind}']`)?.value?.trim() ||
-        sel?.selectedOptions?.[0]?.dataset?.provider ||
-        pendingProvider[kind] ||
-        "";
       if (!model) return toast(t("toast.selectModel"), "err");
-      let usePath = toolConfigs[kind]?.path || "";
       configsBusy = kind;
       render();
       try {
-        if (!hasBackend()) throw new Error(t("toast.runInWailsShort"));
-        if (!toolConfigs[kind]?.exists) {
-          toast(t("toast.configMissing"), "err");
-          const st = await PickToolConfig(kind);
-          await applyToolStatus(st);
-          if (!st.path) throw new Error(t("toast.noPath"));
-          usePath = st.path;
-        }
-        // try match provider from our saved vendors
-        const matched = findProviderForModel(model);
-        const st = await ApplyToolModel({
-          kind,
-          path: usePath,
-          model,
-          provider: provider || matched?.providerId || "",
-          baseUrl: matched?.baseUrl || "",
-          apiKey: matched?.apiKey || "",
-          name: matched?.name || model,
-        });
-        await applyToolStatus(st);
-        toast(tb(st.message) || t("toast.switched", { model }));
+        await setGatewayActiveModel(model);
+        toast(t("toast.hotSwitched", { model, virtual: activeGateway.virtualModel || "aiSwitchModel" }));
+      } catch (e) {
+        toast(errMsg(e), "err");
+      } finally {
+        configsBusy = "";
+        render();
+      }
+    });
+  });
+
+  // App cards: select + apply gateway active model (proxy only)
+  document.querySelectorAll("[data-act='gateway-model-select']").forEach((sel) => {
+    sel.addEventListener("change", () => {
+      const kind = sel.dataset.kind;
+      pendingModel[kind] = sel.value;
+      const applyBtn = document.querySelector(`[data-act='gateway-model-apply'][data-kind='${kind}']`);
+      if (applyBtn) applyBtn.disabled = !sel.value;
+    });
+  });
+  document.querySelectorAll("[data-act='gateway-model-apply']").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const kind = btn.dataset.kind;
+      const sel = document.querySelector(`[data-act='gateway-model-select'][data-kind='${kind}']`);
+      const model = sel?.value?.trim() || pendingModel[kind] || "";
+      if (!model) return toast(t("toast.selectModel"), "err");
+      configsBusy = kind;
+      render();
+      try {
+        await setGatewayActiveModel(model);
+        toast(t("toast.hotSwitched", { model, virtual: activeGateway.virtualModel || "aiSwitchModel" }));
       } catch (e) {
         toast(errMsg(e), "err");
       } finally {
@@ -2531,6 +2614,10 @@ function bindProviderEvents() {
       if (m) m.enabled = true;
       try {
         await persistProviders();
+        // Also bind gateway virtual model → this real model (proxy hot-switch)
+        try {
+          await setGatewayActiveModel(mid);
+        } catch (_) {}
         toast(t("toast.defaultModel", { id: mid }));
         render();
       } catch (e) {
@@ -2914,13 +3001,14 @@ function openAddModal() {
   await refreshProxyStatus();
   await loadUsageStats();
   await loadPackageStatuses();
+  await loadActiveGateway();
   booting = false;
   render();
   if (page === "apps" || page === "configs") {
     loadToolConfigs(false);
   }
   if (page === "models") {
-    loadModelGroups().then(() => render());
+    Promise.all([loadModelGroups(), loadActiveGateway()]).then(() => render());
   }
   if (page === "proxy") {
     // already refreshed

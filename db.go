@@ -56,6 +56,9 @@ func closeDB() {
 		_ = appDB.Close()
 		appDB = nil
 	}
+	activeModelMu.Lock()
+	activeModelCache = ""
+	activeModelMu.Unlock()
 }
 
 func migrateSchema(db *sql.DB) error {

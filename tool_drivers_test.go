@@ -38,8 +38,9 @@ func TestInjectOpenClawGateway(t *testing.T) {
 	agents := root["agents"].(map[string]any)
 	defaults := agents["defaults"].(map[string]any)
 	model := defaults["model"].(map[string]any)
-	if model["primary"] != "aigateway/gpt-test" {
-		t.Fatalf("primary=%v", model["primary"])
+	// Takeover pins virtual hot-switch model (not a concrete upstream id)
+	if model["primary"] != "aigateway/"+gatewayVirtualModel {
+		t.Fatalf("primary=%v want aigateway/%s", model["primary"], gatewayVirtualModel)
 	}
 }
 
@@ -93,8 +94,9 @@ func TestInjectHarnessYAML(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(b)
-	if !strings.Contains(s, "model: m1") {
-		t.Fatalf("missing model: %s", s)
+	// Inject always pins virtual model for proxy hot-switch
+	if !strings.Contains(s, "model: "+gatewayVirtualModel) {
+		t.Fatalf("missing virtual model: %s", s)
 	}
 	if !strings.Contains(s, "127.0.0.1:18080") {
 		t.Fatalf("missing gateway: %s", s)

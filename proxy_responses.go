@@ -34,17 +34,30 @@ func (p *proxyServer) handleResponses(w http.ResponseWriter, r *http.Request) {
 	_ = r.Body.Close()
 
 	model := extractModel(body, r)
-	prov, routeErr := resolveProviderForModel(model)
-	if routeErr != nil {
-		p.logf("responses 路由失败 model=%q: %v", model, routeErr)
+	cands, routeErr := resolveRoutesForModel(model)
+	if routeErr != nil || len(cands) == 0 {
+		msg := "model not routed"
+		if routeErr != nil {
+			msg = routeErr.Error()
+		}
+		p.logf("responses 路由失败 model=%q: %s", model, msg)
 		writeJSON(w, 400, map[string]any{
-			"error": map[string]any{"message": routeErr.Error(), "type": "invalid_request_error", "code": "model_not_routed"},
+			"error": map[string]any{"message": msg, "type": "invalid_request_error", "code": "model_not_routed"},
 		})
 		return
 	}
+	// First healthy route (failover for responses is best-effort on first candidate)
+	cand := cands[0]
+	prov := cand.Provider
+	// Rewrite virtual model (aiSwitchModel) → real upstream model id
+	body = rewriteRequestModel(body, cand.UpstreamModel)
+	upstreamModel := cand.UpstreamModel
+	if upstreamModel == "" {
+		upstreamModel = model
+	}
 
 	stream := isStreamRequest(body)
-	p.logf("POST responses → %s model=%s stream=%v", prov.Name, model, stream)
+	p.logf("POST responses → %s model=%s up=%s stream=%v", prov.Name, model, upstreamModel, stream)
 
 	// Prefer native /responses for OpenAI / Azure OpenAI hosts
 	if supportsNativeResponses(prov.BaseURL) {
@@ -65,6 +78,7 @@ func (p *proxyServer) handleResponses(w http.ResponseWriter, r *http.Request) {
 	}
 	// Map OpenAI-only roles (developer → system) for DeepSeek / third-party vendors
 	chatBody = normalizeUpstreamChatBody(chatBody)
+	chatBody = rewriteRequestModel(chatBody, upstreamModel)
 
 	if stream {
 		p.streamResponsesViaChat(w, r, prov, chatBody, model)

@@ -30,7 +30,37 @@ func resolveProviderForModel(model string) (Provider, error) {
 }
 
 // resolveRoutesForModel returns ordered failover candidates for a client model name.
+// Virtual aliases (aiSwitchModel / aigateway / default) resolve to the active
+// gateway model binding — tools never need config file updates to switch.
 func resolveRoutesForModel(model string) ([]RouteCandidate, error) {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return nil, fmt.Errorf("请求中缺少 model 字段")
+	}
+	// Hot-switch alias → currently selected real model group
+	if isGatewayVirtualModel(model) {
+		active := resolveActiveModelID()
+		if active == "" {
+			return nil, fmt.Errorf("虚拟模型 %s 尚未绑定实际模型，请在「模型管理」中设为默认", gatewayVirtualModel)
+		}
+		cands, err := resolveRoutesForRealModel(active)
+		if err != nil {
+			return nil, fmt.Errorf("虚拟模型 %s → %s 路由失败: %w", gatewayVirtualModel, active, err)
+		}
+		// Keep GroupID as virtual for usage attribution of hot-switch path,
+		// but UpstreamModel is already set to real provider model ids.
+		for i := range cands {
+			if cands[i].GroupID == active {
+				// tag group as virtual for logging; upstream model stays real
+				cands[i].GroupID = gatewayVirtualModel + ":" + active
+			}
+		}
+		return cands, nil
+	}
+	return resolveRoutesForRealModel(model)
+}
+
+func resolveRoutesForRealModel(model string) ([]RouteCandidate, error) {
 	model = strings.TrimSpace(model)
 	if model == "" {
 		return nil, fmt.Errorf("请求中缺少 model 字段")
