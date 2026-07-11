@@ -226,6 +226,96 @@ func (a *App) GetUsageStats() UsageStats {
 	return aggregateUsage(f.Events)
 }
 
+// ProviderPackageStatus is quota vs usage for one vendor's active token package.
+type ProviderPackageStatus struct {
+	ProviderID   string  `json:"providerId"`
+	ProviderName string  `json:"providerName"`
+	PackageID    string  `json:"packageId"`
+	PackageName  string  `json:"packageName"`
+	TotalTokens  int64   `json:"totalTokens"`
+	UsedTokens   int64   `json:"usedTokens"`   // offset + proxy-tracked
+	ProxyTokens  int64   `json:"proxyTokens"`  // from usage log only
+	Remaining    int64   `json:"remaining"`
+	PercentUsed  float64 `json:"percentUsed"`
+	ExpireAt     string  `json:"expireAt"`
+	Expired      bool    `json:"expired"`
+	HasPackage   bool    `json:"hasPackage"`
+}
+
+// GetProviderPackageStatuses returns package remaining for each provider.
+func (a *App) GetProviderPackageStatuses() []ProviderPackageStatus {
+	list, err := loadProvidersFromDisk()
+	if err != nil {
+		return nil
+	}
+	usageMu.Lock()
+	f := loadUsageFile()
+	usageMu.Unlock()
+	// map provider name/id → total tokens used
+	usedBy := map[string]int64{}
+	for _, e := range f.Events {
+		k := strings.TrimSpace(e.Provider)
+		if k == "" {
+			continue
+		}
+		usedBy[strings.ToLower(k)] += int64(e.TotalTokens)
+	}
+
+	out := make([]ProviderPackageStatus, 0, len(list))
+	for _, p := range list {
+		st := ProviderPackageStatus{
+			ProviderID:   p.ID,
+			ProviderName: p.Name,
+		}
+		// match usage by name (proxy records Name)
+		proxyUsed := usedBy[strings.ToLower(strings.TrimSpace(p.Name))]
+		if proxyUsed == 0 {
+			proxyUsed = usedBy[strings.ToLower(strings.TrimSpace(p.ID))]
+		}
+		st.ProxyTokens = proxyUsed
+
+		var active *TokenPackage
+		for i := range p.TokenPackages {
+			if p.TokenPackages[i].Active {
+				active = &p.TokenPackages[i]
+				break
+			}
+		}
+		// fallback: first package
+		if active == nil && len(p.TokenPackages) > 0 {
+			active = &p.TokenPackages[0]
+		}
+		if active == nil {
+			out = append(out, st)
+			continue
+		}
+		st.HasPackage = true
+		st.PackageID = active.ID
+		st.PackageName = active.Name
+		st.TotalTokens = active.TotalTokens
+		st.ExpireAt = active.ExpireAt
+		if active.ExpireAt != "" {
+			if t, err := time.Parse("2006-01-02", active.ExpireAt); err == nil {
+				// expire end of day
+				st.Expired = time.Now().After(t.Add(24*time.Hour - time.Second))
+			}
+		}
+		st.UsedTokens = active.UsedOffset + proxyUsed
+		st.Remaining = st.TotalTokens - st.UsedTokens
+		if st.Remaining < 0 {
+			st.Remaining = 0
+		}
+		if st.TotalTokens > 0 {
+			st.PercentUsed = float64(st.UsedTokens) / float64(st.TotalTokens) * 100
+			if st.PercentUsed > 100 {
+				st.PercentUsed = 100
+			}
+		}
+		out = append(out, st)
+	}
+	return out
+}
+
 // ClearUsageStats wipes recorded usage.
 func (a *App) ClearUsageStats() (UsageStats, error) {
 	usageMu.Lock()

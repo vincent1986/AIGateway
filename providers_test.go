@@ -73,6 +73,9 @@ func TestProvidersPersist(t *testing.T) {
 		Color:    "#fff",
 		UseProxy: &useProxy,
 		Models:   []ProviderModel{{ID: "m", Name: "M", Enabled: true, IsDefault: true}},
+		TokenPackages: []TokenPackage{{
+			ID: "pkg1", Name: "100万", TotalTokens: 1_000_000, Active: true, Currency: "CNY",
+		}},
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -104,6 +104,36 @@ export namespace main {
 	        this.provider = source["provider"];
 	    }
 	}
+	export class TokenPackage {
+	    id: string;
+	    name: string;
+	    totalTokens: number;
+	    usedOffset: number;
+	    price: number;
+	    currency: string;
+	    startAt: string;
+	    expireAt: string;
+	    note: string;
+	    active: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new TokenPackage(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.totalTokens = source["totalTokens"];
+	        this.usedOffset = source["usedOffset"];
+	        this.price = source["price"];
+	        this.currency = source["currency"];
+	        this.startAt = source["startAt"];
+	        this.expireAt = source["expireAt"];
+	        this.note = source["note"];
+	        this.active = source["active"];
+	    }
+	}
 	export class ProviderModel {
 	    id: string;
 	    name: string;
@@ -132,6 +162,7 @@ export namespace main {
 	    color: string;
 	    models: ProviderModel[];
 	    useProxy?: boolean;
+	    tokenPackages: TokenPackage[];
 	
 	    static createFrom(source: any = {}) {
 	        return new Provider(source);
@@ -146,6 +177,7 @@ export namespace main {
 	        this.color = source["color"];
 	        this.models = this.convertValues(source["models"], ProviderModel);
 	        this.useProxy = source["useProxy"];
+	        this.tokenPackages = this.convertValues(source["tokenPackages"], TokenPackage);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -167,6 +199,40 @@ export namespace main {
 		}
 	}
 	
+	export class ProviderPackageStatus {
+	    providerId: string;
+	    providerName: string;
+	    packageId: string;
+	    packageName: string;
+	    totalTokens: number;
+	    usedTokens: number;
+	    proxyTokens: number;
+	    remaining: number;
+	    percentUsed: number;
+	    expireAt: string;
+	    expired: boolean;
+	    hasPackage: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ProviderPackageStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.providerId = source["providerId"];
+	        this.providerName = source["providerName"];
+	        this.packageId = source["packageId"];
+	        this.packageName = source["packageName"];
+	        this.totalTokens = source["totalTokens"];
+	        this.usedTokens = source["usedTokens"];
+	        this.proxyTokens = source["proxyTokens"];
+	        this.remaining = source["remaining"];
+	        this.percentUsed = source["percentUsed"];
+	        this.expireAt = source["expireAt"];
+	        this.expired = source["expired"];
+	        this.hasPackage = source["hasPackage"];
+	    }
+	}
 	export class ProxyConfig {
 	    enabled: boolean;
 	    host: string;
@@ -237,6 +303,7 @@ export namespace main {
 	        this.platformName = source["platformName"];
 	    }
 	}
+	
 	export class ToolConfigStatus {
 	    kind: string;
 	    name: string;

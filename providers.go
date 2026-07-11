@@ -21,6 +21,21 @@ type ProviderModel struct {
 	OwnedBy   string `json:"ownedBy,omitempty"`
 }
 
+// TokenPackage is a purchased / allocated token quota plan for a vendor.
+type TokenPackage struct {
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`        // e.g. "标准 100 万"
+	TotalTokens int64   `json:"totalTokens"` // package quota (tokens)
+	// UsedOffset: tokens already consumed before tracking started (manual)
+	UsedOffset int64   `json:"usedOffset"`
+	Price      float64 `json:"price"`    // optional cost
+	Currency   string  `json:"currency"` // CNY / USD
+	StartAt    string  `json:"startAt"`  // YYYY-MM-DD
+	ExpireAt   string  `json:"expireAt"` // YYYY-MM-DD optional
+	Note       string  `json:"note"`
+	Active     bool    `json:"active"` // current plan for remaining calc
+}
+
 // Provider is a multi-vendor API configuration.
 type Provider struct {
 	ID      string          `json:"id"`
@@ -33,6 +48,8 @@ type Provider struct {
 	// (if proxy is running). Local providers like Ollama default to false.
 	// nil means auto (local → false, others → true).
 	UseProxy *bool `json:"useProxy"`
+	// TokenPackages: purchased token plans for this vendor
+	TokenPackages []TokenPackage `json:"tokenPackages"`
 }
 
 // FetchModelItem is a lightweight model returned from remote API.
@@ -191,7 +208,38 @@ func (a *App) SaveProviders(list []Provider) error {
 		if list[i].Models == nil {
 			list[i].Models = []ProviderModel{}
 		}
-		// ensure at most one default
+		if list[i].TokenPackages == nil {
+			list[i].TokenPackages = []TokenPackage{}
+		}
+		// normalize packages + at most one active
+		act := 0
+		for j := range list[i].TokenPackages {
+			tp := &list[i].TokenPackages[j]
+			tp.ID = strings.TrimSpace(tp.ID)
+			tp.Name = strings.TrimSpace(tp.Name)
+			if tp.ID == "" {
+				tp.ID = fmt.Sprintf("pkg_%d_%d", time.Now().UnixNano(), j)
+			}
+			if tp.Name == "" {
+				tp.Name = "未命名套餐"
+			}
+			if tp.Currency == "" {
+				tp.Currency = "CNY"
+			}
+			if tp.TotalTokens < 0 {
+				tp.TotalTokens = 0
+			}
+			if tp.UsedOffset < 0 {
+				tp.UsedOffset = 0
+			}
+			if tp.Active {
+				act++
+				if act > 1 {
+					tp.Active = false
+				}
+			}
+		}
+		// ensure at most one default model
 		defCount := 0
 		for j := range list[i].Models {
 			if list[i].Models[j].IsDefault {
@@ -233,6 +281,9 @@ func (a *App) UpsertProvider(p Provider) ([]Provider, error) {
 	}
 	if p.Models == nil {
 		p.Models = []ProviderModel{}
+	}
+	if p.TokenPackages == nil {
+		p.TokenPackages = []TokenPackage{}
 	}
 	found := false
 	for i := range list {

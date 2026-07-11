@@ -46,6 +46,10 @@ export function FetchProviderModels(arg1, arg2) {
   return window['go']['main']['App']['FetchProviderModels'](arg1, arg2);
 }
 
+export function GetProviderPackageStatuses() {
+  return window['go']['main']['App']['GetProviderPackageStatuses']();
+}
+
 export function GetProxyConfig() {
   return window['go']['main']['App']['GetProxyConfig']();
 }

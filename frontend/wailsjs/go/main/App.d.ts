@@ -24,6 +24,8 @@ export function EnsureProxyRouting():Promise<main.ProxyStatus>;
 
 export function FetchProviderModels(arg1:string,arg2:string):Promise<Array<main.FetchModelItem>>;
 
+export function GetProviderPackageStatuses():Promise<Array<main.ProviderPackageStatus>>;
+
 export function GetProxyConfig():Promise<main.ProxyConfig>;
 
 export function GetProxyStatus():Promise<main.ProxyStatus>;

@@ -1,5 +1,6 @@
 import "./style.css";
 import "./app.css";
+import { t, getLocale, setLocale, revealLabelForOs, tb } from "./i18n.js";
 
 import {
   DiscoverToolConfigs,
@@ -26,6 +27,7 @@ import {
   EnsureProxyRouting,
   GetUsageStats,
   ClearUsageStats,
+  GetProviderPackageStatuses,
 } from "../wailsjs/go/main/App";
 
 /** @typedef {{ id: string, name: string, baseUrl: string, apiKey: string, color: string, models: Model[] }} Provider */
@@ -34,16 +36,24 @@ import {
 
 const COLORS = ["#3d8bfd", "#7c5cff", "#3fb950", "#d29922", "#f85149", "#39c5cf", "#e85d9a"];
 const PRESETS = [
-  { name: "Ollama", baseUrl: "http://127.0.0.1:11434/v1", color: "#c4c4c4", useProxy: false, apiKey: "ollama" },
-  { name: "OpenAI", baseUrl: "https://api.openai.com/v1", color: "#3d8bfd", useProxy: true },
-  { name: "Anthropic", baseUrl: "https://api.anthropic.com/v1", color: "#d29922", useProxy: true },
-  { name: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", color: "#3fb950", useProxy: true },
-  { name: "通义千问", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", color: "#7c5cff", useProxy: true },
-  { name: "Moonshot", baseUrl: "https://api.moonshot.cn/v1", color: "#39c5cf", useProxy: true },
-  { name: "清华智谱", baseUrl: "https://open.bigmodel.cn/api/paas/v4", color: "#3859ff", useProxy: true },
-  { name: "MiniMax", baseUrl: "https://api.minimax.chat/v1", color: "#e85d9a", useProxy: true },
-  { name: "自定义", baseUrl: "https://", color: "#8b9cb3", useProxy: true },
+  { nameKey: null, name: "Ollama", baseUrl: "http://127.0.0.1:11434/v1", color: "#c4c4c4", useProxy: false, apiKey: "ollama" },
+  { nameKey: null, name: "OpenAI", baseUrl: "https://api.openai.com/v1", color: "#3d8bfd", useProxy: true },
+  { nameKey: null, name: "Anthropic", baseUrl: "https://api.anthropic.com/v1", color: "#d29922", useProxy: true },
+  { nameKey: null, name: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", color: "#3fb950", useProxy: true },
+  { nameKey: "preset.qwen", name: "通义千问", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", color: "#7c5cff", useProxy: true },
+  { nameKey: null, name: "Moonshot", baseUrl: "https://api.moonshot.cn/v1", color: "#39c5cf", useProxy: true },
+  { nameKey: "preset.zhipu", name: "清华智谱", baseUrl: "https://open.bigmodel.cn/api/paas/v4", color: "#3859ff", useProxy: true },
+  { nameKey: null, name: "MiniMax", baseUrl: "https://api.minimax.chat/v1", color: "#e85d9a", useProxy: true },
+  { nameKey: "preset.custom", name: "自定义", baseUrl: "https://", color: "#8b9cb3", useProxy: true },
 ];
+
+function presetDisplayName(p) {
+  return p.nameKey ? t(p.nameKey) : p.name;
+}
+
+function isCustomPreset(p) {
+  return p.nameKey === "preset.custom";
+}
 
 const STORAGE_KEY = "codex.providers.v1";
 const PAGE_KEY = "codex.ui.page";
@@ -67,6 +77,8 @@ let page = ["configs", "proxy", "usage"].includes(localStorage.getItem(PAGE_KEY)
 /** @type {null | { total?: any, byDay?: any[], byModel?: any[], byProvider?: any[], recent?: any[] }} */
 let usageStats = null;
 let usageBusy = false;
+/** @type {Record<string, any>} providerId → package status */
+let packageStatusById = {};
 
 /** @type {null | { running?: boolean, baseUrl?: string, host?: string, port?: number, autoStart?: boolean, listenKey?: string, lastError?: string, logs?: string[] }} */
 let proxyStatus = null;
@@ -88,7 +100,7 @@ let configsBusy = "";
 let systemInfo = {
   os: "darwin",
   platformName: "macOS",
-  revealLabel: "在访达中显示",
+  revealLabel: "",
   homeDir: "",
 };
 
@@ -105,9 +117,13 @@ function toast(msg, type = "ok") {
   if (!host) return;
   const el = document.createElement("div");
   el.className = `toast ${type}`;
-  el.textContent = msg;
+  el.textContent = tb(msg);
   host.appendChild(el);
   setTimeout(() => el.remove(), 3000);
+}
+
+function errMsg(e) {
+  return tb(e?.message || String(e));
 }
 
 function initials(name) {
@@ -131,6 +147,21 @@ function isLocalProviderHint(name, baseUrl) {
   return n.includes("ollama") || n.includes("11434") || n.includes("127.0.0.1") || n.includes("localhost");
 }
 
+function normalizeTokenPackage(tp) {
+  return {
+    id: tp.id || tp.ID || uid(),
+    name: tp.name || tp.Name || t("pkg.unnamed"),
+    totalTokens: Number(tp.totalTokens ?? tp.TotalTokens ?? 0) || 0,
+    usedOffset: Number(tp.usedOffset ?? tp.UsedOffset ?? 0) || 0,
+    price: Number(tp.price ?? tp.Price ?? 0) || 0,
+    currency: tp.currency || tp.Currency || "CNY",
+    startAt: tp.startAt || tp.StartAt || "",
+    expireAt: tp.expireAt || tp.ExpireAt || "",
+    note: tp.note || tp.Note || "",
+    active: !!(tp.active ?? tp.Active),
+  };
+}
+
 function normalizeProvider(p) {
   const name = p.name || "";
   const baseUrl = (p.baseUrl || p.BaseURL || "").replace(/\/$/, "");
@@ -139,6 +170,15 @@ function normalizeProvider(p) {
   if (typeof p.useProxy === "boolean") useProxy = p.useProxy;
   else if (typeof p.UseProxy === "boolean") useProxy = p.UseProxy;
   else useProxy = !isLocalProviderHint(name, baseUrl);
+  const pkgs = (p.tokenPackages || p.TokenPackages || []).map(normalizeTokenPackage);
+  // at most one active
+  let sawActive = false;
+  for (const pkg of pkgs) {
+    if (pkg.active) {
+      if (sawActive) pkg.active = false;
+      else sawActive = true;
+    }
+  }
   return {
     id: p.id || uid(),
     name,
@@ -146,6 +186,7 @@ function normalizeProvider(p) {
     apiKey: p.apiKey || p.APIKey || "",
     color: p.color || COLORS[0],
     useProxy,
+    tokenPackages: pkgs,
     models: (p.models || []).map((m) => ({
       id: m.id,
       name: m.name || m.id,
@@ -154,6 +195,74 @@ function normalizeProvider(p) {
       ownedBy: m.ownedBy || m.owned_by || "",
     })),
   };
+}
+
+function formatTokens(n) {
+  n = Number(n) || 0;
+  if (getLocale() === "zh") {
+    if (n >= 1e8) return (n / 1e8).toFixed(2) + " " + t("unit.yi");
+    if (n >= 1e4) return (n / 1e4).toFixed(2) + " " + t("unit.wan");
+    return n.toLocaleString("zh-CN");
+  }
+  if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(2) + "K";
+  return n.toLocaleString("en-US");
+}
+
+function providerPackageStatus(p) {
+  const st = packageStatusById[p.id];
+  if (st) {
+    return {
+      hasPackage: !!(st.hasPackage ?? st.HasPackage),
+      total: st.totalTokens ?? st.TotalTokens ?? 0,
+      used: st.usedTokens ?? st.UsedTokens ?? 0,
+      remaining: st.remaining ?? st.Remaining ?? 0,
+      percent: st.percentUsed ?? st.PercentUsed ?? 0,
+      name: st.packageName ?? st.PackageName ?? "",
+      expired: !!(st.expired ?? st.Expired),
+      expireAt: st.expireAt ?? st.ExpireAt ?? "",
+    };
+  }
+  // client-side fallback from packages + usageStats
+  const pkgs = p.tokenPackages || [];
+  const active = pkgs.find((x) => x.active) || pkgs[0];
+  if (!active) return { hasPackage: false, total: 0, used: 0, remaining: 0, percent: 0, name: "", expired: false, expireAt: "" };
+  const byProv = usageStats?.byProvider || usageStats?.ByProvider || [];
+  let proxyUsed = 0;
+  for (const b of byProv) {
+    const key = (b.key || b.Key || "").toLowerCase();
+    if (key === (p.name || "").toLowerCase() || key === (p.id || "").toLowerCase()) {
+      proxyUsed = b.totalTokens ?? b.TotalTokens ?? 0;
+      break;
+    }
+  }
+  const used = (active.usedOffset || 0) + proxyUsed;
+  const total = active.totalTokens || 0;
+  const remaining = Math.max(0, total - used);
+  const percent = total > 0 ? Math.min(100, (used / total) * 100) : 0;
+  return {
+    hasPackage: true,
+    total,
+    used,
+    remaining,
+    percent,
+    name: active.name,
+    expired: false,
+    expireAt: active.expireAt || "",
+  };
+}
+
+async function loadPackageStatuses() {
+  if (!hasBackend() || typeof GetProviderPackageStatuses !== "function") return;
+  try {
+    const list = await GetProviderPackageStatuses();
+    packageStatusById = {};
+    for (const s of list || []) {
+      const id = s.providerId || s.ProviderID;
+      if (id) packageStatusById[id] = s;
+    }
+  } catch (_) {}
 }
 
 async function loadProviders() {
@@ -168,13 +277,13 @@ async function loadProviders() {
           providers = legacy;
           await persistProviders();
           localStorage.removeItem(STORAGE_KEY);
-          toast(`已迁移 ${legacy.length} 个本地厂家到应用存储`);
+          toast(t("toast.migrated", { n: legacy.length }));
         }
       }
     } catch (e) {
       console.error(e);
       providers = loadLocalLegacy();
-      toast("加载厂家失败，已回退本地缓存", "err");
+      toast(t("toast.loadProvidersFail"), "err");
     }
   } else {
     providers = loadLocalLegacy();
@@ -204,17 +313,18 @@ async function loadSystemInfo() {
   if (!hasBackend() || typeof window.go?.main?.App?.GetSystemInfo !== "function") {
     const ua = navigator.userAgent || "";
     if (/Windows/i.test(ua)) {
-      systemInfo = { os: "windows", platformName: "Windows", revealLabel: "在资源管理器中显示" };
+      systemInfo = { os: "windows", platformName: "Windows", revealLabel: "" };
     } else if (/Mac/i.test(ua)) {
-      systemInfo = { os: "darwin", platformName: "macOS", revealLabel: "在访达中显示" };
+      systemInfo = { os: "darwin", platformName: "macOS", revealLabel: "" };
     } else {
-      systemInfo = { os: "linux", platformName: "Linux", revealLabel: "在文件管理器中显示" };
+      systemInfo = { os: "linux", platformName: "Linux", revealLabel: "" };
     }
     return;
   }
   try {
     systemInfo = (await GetSystemInfo()) || systemInfo;
   } catch (_) {}
+  // reveal label is localized in UI via revealLabelForOs(os)
 }
 
 /** enabled models from all providers + config candidates */
@@ -226,7 +336,7 @@ function modelChoicesFor(kind) {
   for (const c of st?.candidates || []) {
     if (!c?.id || seen.has(c.id)) continue;
     seen.add(c.id);
-    list.push({ id: c.id, name: c.name || c.id, provider: c.provider || "", group: "配置文件内" });
+    list.push({ id: c.id, name: c.name || c.id, provider: c.provider || "", group: t("configs.groupInFile") });
   }
   for (const p of providers) {
     for (const m of p.models || []) {
@@ -236,7 +346,7 @@ function modelChoicesFor(kind) {
     }
   }
   if (st?.model && !seen.has(st.model)) {
-    list.unshift({ id: st.model, name: st.model, provider: st.modelProvider || "", group: "当前" });
+    list.unshift({ id: st.model, name: st.model, provider: st.modelProvider || "", group: t("configs.groupCurrent") });
   }
   return list;
 }
@@ -247,7 +357,7 @@ async function fetchModelsFromApi(provider) {
   }
   // browser preview fallback
   await new Promise((r) => setTimeout(r, 400));
-  throw new Error("请在 Wails 应用中运行以真实获取模型");
+  throw new Error(t("toast.fetchInWails"));
 }
 
 function mergeFetchedModels(provider, fetched) {
@@ -298,10 +408,10 @@ async function loadToolConfigs(force = false) {
       }
     }
   } catch (e) {
-    toast(e?.message || String(e), "err");
+    toast(errMsg(e), "err");
   } finally {
     configsLoading = false;
-    if (force) toast("已重新搜索配置文件");
+    if (force) toast(t("toast.rescanned"));
     render();
   }
 }
@@ -318,7 +428,7 @@ function mockTool(kind, name, path) {
     searchPaths: [path],
     candidates: [],
     source: "auto",
-    message: "当前为浏览器预览，请用 wails dev 连接本机",
+    message: t("configs.browserPreview"),
     hasDefaultBackup: false,
   };
 }
@@ -342,11 +452,11 @@ function render() {
   const app = document.getElementById("app");
   if (booting) {
     app.innerHTML = `
-      <div class="main-empty" style="flex:1;min-height:0;width:100%;height:100%">
+      <div class="main-empty">
         <div>
           <div class="empty-icon"><span class="spinner" style="width:22px;height:22px;border-width:3px"></span></div>
-          <h3>正在加载…</h3>
-          <p>读取厂家与系统信息</p>
+          <h3>${t("boot.loading")}</h3>
+          <p>${t("boot.loadingDesc")}</p>
         </div>
       </div>`;
     return;
@@ -358,24 +468,28 @@ function render() {
         <div class="brand">
           <div class="brand-mark">AI</div>
           <div>
-            <div class="brand-title">AI Switch <span class="brand-sub">模型管理</span></div>
+            <div class="brand-title">AI Switch <span class="brand-sub">${t("brand.sub")}</span></div>
           </div>
         </div>
         <nav class="nav-tabs">
-          <button class="nav-tab ${page === "providers" ? "active" : ""}" data-page="providers">厂家模型</button>
-          <button class="nav-tab ${page === "configs" ? "active" : ""}" data-page="configs">配置文件</button>
-          <button class="nav-tab ${page === "proxy" ? "active" : ""}" data-page="proxy">代理服务</button>
-          <button class="nav-tab ${page === "usage" ? "active" : ""}" data-page="usage">Token 统计</button>
+          <button class="nav-tab ${page === "providers" ? "active" : ""}" data-page="providers">${t("nav.providers")}</button>
+          <button class="nav-tab ${page === "configs" ? "active" : ""}" data-page="configs">${t("nav.configs")}</button>
+          <button class="nav-tab ${page === "proxy" ? "active" : ""}" data-page="proxy">${t("nav.proxy")}</button>
+          <button class="nav-tab ${page === "usage" ? "active" : ""}" data-page="usage">${t("nav.usage")}</button>
         </nav>
       </div>
       <div class="topbar-meta">
+        <div class="lang-switch" title="${escapeAttr(t("lang.switch"))}">
+          <button type="button" class="lang-btn ${getLocale() === "zh" ? "active" : ""}" data-lang="zh">${t("lang.zh")}</button>
+          <button type="button" class="lang-btn ${getLocale() === "en" ? "active" : ""}" data-lang="en">${t("lang.en")}</button>
+        </div>
         <span class="stat-pill">${escapeHtml(systemInfo.platformName || "")}</span>
-        <span class="stat-pill">厂家 <strong>${providers.length}</strong></span>
-        <span class="stat-pill">模型 <strong>${totalModels()}</strong></span>
-        <span class="stat-pill">已启用 <strong>${enabledModels()}</strong></span>
+        <span class="stat-pill">${t("stat.providers")} <strong>${providers.length}</strong></span>
+        <span class="stat-pill">${t("stat.models")} <strong>${totalModels()}</strong></span>
+        <span class="stat-pill">${t("stat.enabled")} <strong>${enabledModels()}</strong></span>
         ${
           proxyStatus?.running
-            ? `<span class="stat-pill"><span class="status-dot ok"></span> 代理</span>`
+            ? `<span class="stat-pill"><span class="status-dot ok"></span> ${t("stat.proxy")}</span>`
             : ""
         }
       </div>
@@ -410,16 +524,16 @@ function renderProxyPage() {
       <div class="config-page">
         <div class="config-hero">
           <div>
-            <h2>OpenAI 兼容代理</h2>
-            <p>本地统一入口：客户端按标准 OpenAI 协议访问，代理按模型路由到各厂家 API（自动带上对应 Key）。</p>
+            <h2>${t("proxy.title")}</h2>
+            <p>${t("proxy.desc")}</p>
           </div>
           <div class="actions">
             ${
               running
-                ? `<button class="btn btn-danger" id="btn-proxy-stop" ${proxyBusy ? "disabled" : ""}>停止代理</button>`
-                : `<button class="btn btn-primary" id="btn-proxy-start" ${proxyBusy ? "disabled" : ""}>启动代理</button>`
+                ? `<button class="btn btn-danger" id="btn-proxy-stop" ${proxyBusy ? "disabled" : ""}>${t("proxy.stop")}</button>`
+                : `<button class="btn btn-primary" id="btn-proxy-start" ${proxyBusy ? "disabled" : ""}>${t("proxy.start")}</button>`
             }
-            <button class="btn" id="btn-proxy-refresh" ${proxyBusy ? "disabled" : ""}>刷新状态</button>
+            <button class="btn" id="btn-proxy-refresh" ${proxyBusy ? "disabled" : ""}>${t("proxy.refresh")}</button>
           </div>
         </div>
 
@@ -428,72 +542,71 @@ function renderProxyPage() {
             <div class="config-card-head">
               <h3>
                 <span class="status-dot ${running ? "ok" : "fail"}"></span>
-                服务状态
+                ${t("proxy.status")}
               </h3>
-              <span class="tag ${running ? "ok" : "off"}">${running ? "运行中" : "已停止"}</span>
+              <span class="tag ${running ? "ok" : "off"}">${running ? t("proxy.running") : t("proxy.stopped")}</span>
             </div>
             <div class="config-card-body">
               <div class="kv">
-                <label>OpenAI Base URL（给 Codex / 客户端用）</label>
+                <label>${t("proxy.baseUrlLabel")}</label>
                 <div class="input-with-action">
                   <input class="input mono" id="proxy-base-url" readonly value="${escapeAttr(base)}" />
-                  <button class="btn btn-sm" id="btn-copy-base">复制</button>
+                  <button class="btn btn-sm" id="btn-copy-base">${t("common.copy")}</button>
                 </div>
               </div>
               <div class="form-grid" style="margin-top:12px">
                 <div class="field">
-                  <label>监听地址</label>
+                  <label>${t("proxy.host")}</label>
                   <input class="input mono" id="proxy-host" value="${escapeAttr(proxyForm.host)}" ${running ? "disabled" : ""} />
                 </div>
                 <div class="field">
-                  <label>端口</label>
+                  <label>${t("proxy.port")}</label>
                   <input class="input mono" id="proxy-port" type="number" min="1" max="65535" value="${escapeAttr(String(proxyForm.port))}" ${running ? "disabled" : ""} />
                 </div>
                 <div class="field full">
-                  <label>接入密钥（可选，客户端 Bearer；空则不校验）</label>
-                  <input class="input mono" id="proxy-listen-key" value="${escapeAttr(proxyForm.listenKey || "")}" placeholder="留空=任意 token" />
+                  <label>${t("proxy.listenKey")}</label>
+                  <input class="input mono" id="proxy-listen-key" value="${escapeAttr(proxyForm.listenKey || "")}" placeholder="${escapeAttr(t("proxy.listenKeyPh"))}" />
                 </div>
                 <div class="field full">
                   <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
                     <input type="checkbox" id="proxy-autostart" ${proxyForm.autoStart ? "checked" : ""} />
-                    应用启动时自动开启代理
+                    ${t("proxy.autoStart")}
                   </label>
                 </div>
               </div>
               <div class="actions" style="margin-top:14px">
-                <button class="btn btn-primary" id="btn-proxy-save" ${proxyBusy ? "disabled" : ""}>保存配置</button>
+                <button class="btn btn-primary" id="btn-proxy-save" ${proxyBusy ? "disabled" : ""}>${t("proxy.save")}</button>
               </div>
               <div class="hint" style="margin-top:8px">
-                在<strong>厂家模型</strong>里选择「走本地代理」后会<strong>自动启动代理</strong>并写入 Codex 的 base_url，无需在此单独设置。
-                Windows 系统代理下，本机 127.0.0.1 自动直连，云 API 仍可走系统代理。
+                ${t("proxy.hintAuto")}
               </div>
               ${
                 st.lastError
-                  ? `<div class="test-result err" style="margin-top:12px"><div class="test-result-title">错误</div><pre class="preview-box">${escapeHtml(st.lastError)}</pre></div>`
+                  ? `<div class="test-result err" style="margin-top:12px"><div class="test-result-title">${t("common.error")}</div><pre class="preview-box">${escapeHtml(tb(st.lastError))}</pre></div>`
                   : ""
               }
               <div class="hint" style="margin-top:10px">
-                流程：厂家开启「走本地代理」并保存 → 代理自动就绪 → Codex 请求经上方地址转发到真实 API。
+                ${t("proxy.hintFlow")}
               </div>
             </div>
           </section>
 
           <section class="config-card">
             <div class="config-card-head">
-              <h3>路由说明</h3>
+              <h3>${t("proxy.routing")}</h3>
             </div>
             <div class="config-card-body">
-              <div class="hint">支持端点（标准 OpenAI）</div>
+              <div class="hint">${t("proxy.endpoints")}</div>
               <ul class="search-paths">
                 <li>GET  {base}/models</li>
-                <li>POST {base}/chat/completions（含 stream）</li>
+                <li>POST {base}/chat/completions (stream)</li>
                 <li>POST {base}/completions</li>
                 <li>POST {base}/embeddings</li>
               </ul>
-              <div class="hint" style="margin-top:12px">按 model 匹配厂家</div>
+              <div class="hint" style="margin-top:12px">${t("proxy.matchModel")}</div>
               <div class="model-table-wrap" style="margin-top:8px;max-height:220px;overflow:auto">
                 <table class="model-table">
-                  <thead><tr><th>厂家</th><th>已启用模型</th></tr></thead>
+                  <thead><tr><th>${t("proxy.colProvider")}</th><th>${t("proxy.colModels")}</th></tr></thead>
                   <tbody>
                     ${
                       providers.length
@@ -502,11 +615,11 @@ function renderProxyPage() {
                               const ms = (p.models || []).filter((m) => m.enabled).map((m) => m.id);
                               return `<tr>
                                 <td>${escapeHtml(p.name)}</td>
-                                <td class="model-id">${ms.length ? escapeHtml(ms.join(", ")) : "（无）"}</td>
+                                <td class="model-id">${ms.length ? escapeHtml(ms.join(", ")) : t("common.none")}</td>
                               </tr>`;
                             })
                             .join("")
-                        : `<tr><td colspan="2">暂无厂家，请先在「厂家模型」添加</td></tr>`
+                        : `<tr><td colspan="2">${t("proxy.noProviders")}</td></tr>`
                     }
                   </tbody>
                 </table>
@@ -518,13 +631,13 @@ function renderProxyPage() {
         <section class="panel" style="margin-top:4px">
           <div class="panel-head">
             <div>
-              <h3>运行日志</h3>
-              <p class="desc">最近请求与路由记录</p>
+              <h3>${t("proxy.logs")}</h3>
+              <p class="desc">${t("proxy.logsDesc")}</p>
             </div>
           </div>
           <div class="panel-body">
             <pre class="preview-box" style="max-height:220px">${
-              logs.length ? escapeHtml(logs.join("\n")) : "（暂无日志，启动代理后在此查看）"
+              logs.length ? escapeHtml(logs.join("\n")) : t("proxy.noLogs")
             }</pre>
           </div>
         </section>
@@ -539,8 +652,8 @@ function renderProvidersPage() {
     <div class="layout">
       <aside class="sidebar">
         <div class="sidebar-head">
-          <h2>厂家</h2>
-          <button class="btn btn-primary btn-sm" id="btn-add-provider">+ 添加</button>
+          <h2>${t("providers.title")}</h2>
+          <button class="btn btn-primary btn-sm" id="btn-add-provider">${t("providers.add")}</button>
         </div>
         <div class="provider-list">
           ${
@@ -551,14 +664,20 @@ function renderProvidersPage() {
             <button class="provider-item ${item.id === selectedId ? "active" : ""}" data-id="${item.id}">
               <div class="provider-avatar" style="background:${item.color}">${initials(item.name)}</div>
               <div class="provider-meta">
-                <div class="provider-name">${escapeHtml(item.name || "未命名")}</div>
-                <div class="provider-hint">${escapeHtml(item.baseUrl || "未配置 API")}</div>
+                <div class="provider-name">${escapeHtml(item.name || t("common.unnamed"))}</div>
+                <div class="provider-hint">${escapeHtml(item.baseUrl || t("providers.noApi"))}</div>
               </div>
-              <span class="provider-badge" title="${item.useProxy ? "走代理" : "直连"}">${item.useProxy ? "代" : "直"} ${item.models?.length || 0}</span>
+              <span class="provider-badge" title="${item.useProxy ? t("providers.viaProxy") : t("providers.direct")}">${item.useProxy ? t("providers.badgeProxy") : t("providers.badgeDirect")} ${item.models?.length || 0}${
+                (() => {
+                  const s = providerPackageStatus(item);
+                  if (!s.hasPackage) return "";
+                  return ` · ${Math.max(0, 100 - s.percent).toFixed(0)}%`;
+                })()
+              }</span>
             </button>`
                   )
                   .join("")
-              : `<div class="empty-side">还没有厂家<br/>点击「添加」开始</div>`
+              : `<div class="empty-side">${t("providers.emptySide")}</div>`
           }
         </div>
       </aside>
@@ -577,14 +696,12 @@ function renderConfigsPage() {
       <div class="config-page">
         <div class="config-hero">
           <div>
-            <h2>配置文件管理</h2>
-            <p>管理 Codex 与 Claude Code（${escapeHtml(
-              systemInfo.platformName || "macOS / Windows"
-            )}）：自动搜索 · 手动选择 · 备份还原 · 切换模型。</p>
+            <h2>${t("configs.title")}</h2>
+            <p>${t("configs.desc", { platform: escapeHtml(systemInfo.platformName || "macOS / Windows") })}</p>
           </div>
           <div class="actions">
             <button class="btn btn-primary" id="btn-rescan" ${configsLoading ? "disabled" : ""}>
-              ${configsLoading ? `<span class="spinner"></span> 搜索中…` : "重新自动搜索"}
+              ${configsLoading ? `<span class="spinner"></span> ${t("configs.searching")}` : t("configs.rescan")}
             </button>
           </div>
         </div>
@@ -609,7 +726,7 @@ function placeholder(kind, name) {
     searchPaths: [],
     candidates: [],
     source: "auto",
-    message: configsLoading ? "正在搜索…" : "尚未加载",
+    message: configsLoading ? t("configs.searchingMsg") : t("configs.notLoaded"),
     hasDefaultBackup: false,
   };
 }
@@ -624,7 +741,7 @@ function renderToolCard(st) {
 
   const groups = new Map();
   for (const c of choices) {
-    const g = c.group || "模型";
+    const g = c.group || t("common.models");
     if (!groups.has(g)) groups.set(g, []);
     groups.get(g).push(c);
   }
@@ -637,67 +754,67 @@ function renderToolCard(st) {
           ${escapeHtml(st.name)}
         </h3>
         <div class="meta-row">
-          <span class="tag ${ok ? "ok" : "off"}">${ok ? "已定位" : "未找到"}</span>
+          <span class="tag ${ok ? "ok" : "off"}">${ok ? t("configs.located") : t("configs.notFound")}</span>
           <span class="tag">${escapeHtml(st.source || "auto")}</span>
         </div>
       </div>
       <div class="config-card-body">
         <div class="path-box">
-          <label style="font-size:12px;color:var(--text-secondary);font-weight:500">配置文件路径</label>
-          <div class="path-value ${ok ? "" : "missing"}">${escapeHtml(st.path || "—")}</div>
+          <label style="font-size:12px;color:var(--text-secondary);font-weight:500">${t("configs.pathLabel")}</label>
+          <div class="path-value ${ok ? "" : "missing"}">${escapeHtml(st.path || t("common.dash"))}</div>
         </div>
 
         <div class="actions">
-          <button class="btn btn-sm" data-act="scan" data-kind="${kind}" ${busy ? "disabled" : ""}>自动搜索</button>
-          <button class="btn btn-sm btn-primary" data-act="pick" data-kind="${kind}" ${busy ? "disabled" : ""}>手动选择</button>
+          <button class="btn btn-sm" data-act="scan" data-kind="${kind}" ${busy ? "disabled" : ""}>${t("configs.autoScan")}</button>
+          <button class="btn btn-sm btn-primary" data-act="pick" data-kind="${kind}" ${busy ? "disabled" : ""}>${t("configs.pick")}</button>
           <button class="btn btn-sm" data-act="reveal" data-kind="${kind}" ${!st.path ? "disabled" : ""}>${escapeHtml(
-            systemInfo.revealLabel || "在文件管理器中显示"
+            revealLabelForOs(systemInfo.os)
           )}</button>
-          <button class="btn btn-sm btn-ghost" data-act="clear" data-kind="${kind}" ${st.source !== "override" ? "disabled" : ""}>清除手动路径</button>
+          <button class="btn btn-sm btn-ghost" data-act="clear" data-kind="${kind}" ${st.source !== "override" ? "disabled" : ""}>${t("configs.clearPath")}</button>
         </div>
 
         <div class="actions" style="margin-top:2px">
           <button class="btn btn-sm" data-act="backup-default" data-kind="${kind}" ${busy || !ok ? "disabled" : ""}>
-            ${st.hasDefaultBackup ? "更新默认备份" : "备份为默认"}
+            ${st.hasDefaultBackup ? t("configs.updateBackup") : t("configs.backupDefault")}
           </button>
           <button class="btn btn-sm" data-act="restore-default" data-kind="${kind}" ${
             busy || !st.hasDefaultBackup ? "disabled" : ""
-          }>还原默认</button>
+          }>${t("configs.restoreDefault")}</button>
           <button class="btn btn-sm btn-ghost" data-act="clear-backup" data-kind="${kind}" ${
             busy || !st.hasDefaultBackup ? "disabled" : ""
-          }>清除备份</button>
-          ${st.hasDefaultBackup ? `<span class="tag ok">已有默认备份</span>` : `<span class="tag off">尚未备份</span>`}
+          }>${t("configs.clearBackup")}</button>
+          ${st.hasDefaultBackup ? `<span class="tag ok">${t("configs.hasBackup")}</span>` : `<span class="tag off">${t("configs.noBackup")}</span>`}
         </div>
         ${
           st.hasDefaultBackup
-            ? `<div class="hint">默认备份：${escapeHtml(formatBackupAt(st.defaultBackupAt))} · 首次修改前自动备份</div>`
-            : `<div class="hint">切换模型前会自动备份当前配置，之后可一键还原</div>`
+            ? `<div class="hint">${t("configs.backupHint", { at: escapeHtml(formatBackupAt(st.defaultBackupAt)) })}</div>`
+            : `<div class="hint">${t("configs.autoBackupHint")}</div>`
         }
 
-        <div class="config-msg ${msgClass}">${escapeHtml(st.message || (ok ? "就绪" : "等待搜索"))}</div>
+        <div class="config-msg ${msgClass}">${escapeHtml(tb(st.message || (ok ? t("common.ready") : t("configs.waitSearch"))))}</div>
 
         <div class="form-grid" style="grid-template-columns:1fr 1fr">
           <div class="kv">
-            <label>当前模型</label>
-            <div class="value">${escapeHtml(st.model || "（未设置）")}</div>
+            <label>${t("configs.currentModel")}</label>
+            <div class="value">${escapeHtml(st.model || t("configs.unset"))}</div>
           </div>
           <div class="kv">
-            <label>${kind === "codex" ? "model_provider" : "备注"}</label>
+            <label>${kind === "codex" ? "model_provider" : t("common.note")}</label>
             <div class="value">${escapeHtml(
               kind === "codex"
-                ? st.modelProvider || "—"
+                ? st.modelProvider || t("common.dash")
                 : st.modelProvider
                   ? `BASE ${st.modelProvider}`
-                  : "model + env (教程兼容)"
+                  : t("configs.claudeCompat")
             )}</div>
           </div>
         </div>
 
         <div class="field full">
-          <label>切换模型</label>
+          <label>${t("configs.switchModel")}</label>
           <div class="input-with-action">
             <select class="select" data-act="model-select" data-kind="${kind}">
-              <option value="">选择模型…</option>
+              <option value="">${t("configs.selectModel")}</option>
               ${[...groups.entries()]
                 .map(
                   ([g, items]) => `
@@ -717,10 +834,10 @@ function renderToolCard(st) {
             <button class="btn btn-primary btn-sm" data-act="apply-model" data-kind="${kind}" ${
               busy || !selectedModel ? "disabled" : ""
             }>
-              ${busy ? `<span class="spinner"></span>` : "应用"}
+              ${busy ? `<span class="spinner"></span>` : t("common.apply")}
             </button>
           </div>
-          <span class="hint">也可直接输入自定义模型 ID</span>
+          <span class="hint">${t("configs.customModelHint")}</span>
           <div class="input-with-action" style="margin-top:8px">
             <input class="input mono" data-act="model-input" data-kind="${kind}" value="${escapeAttr(
               selectedModel
@@ -736,11 +853,11 @@ function renderToolCard(st) {
           ${
             kind === "claude"
               ? `<div class="actions" style="margin-top:10px">
-                  <button class="btn btn-sm btn-primary" data-act="deepseek-claude" ${busy ? "disabled" : ""} title="按 DeepSeek 官方文档写入 ANTHROPIC_* 环境变量与 settings.json">
-                    一键迁移 DeepSeek → Claude Code
+                  <button class="btn btn-sm btn-primary" data-act="deepseek-claude" ${busy ? "disabled" : ""} title="${escapeAttr(t("configs.deepseekOneClick"))}">
+                    ${t("configs.deepseekOneClick")}
                   </button>
                 </div>
-                <div class="hint">官方路径：ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic · 主模型 deepseek-v4-pro[1m] · 子代理 deepseek-v4-flash</div>`
+                <div class="hint">${t("configs.deepseekHint")}</div>`
               : ""
           }
         </div>
@@ -748,7 +865,7 @@ function renderToolCard(st) {
         ${
           st.searchPaths?.length
             ? `<div>
-                <label style="font-size:12px;color:var(--text-secondary)">自动搜索路径</label>
+                <label style="font-size:12px;color:var(--text-secondary)">${t("configs.searchPaths")}</label>
                 <ul class="search-paths">
                   ${(st.searchPaths || []).map((p) => `<li>${escapeHtml(p)}</li>`).join("")}
                 </ul>
@@ -759,7 +876,7 @@ function renderToolCard(st) {
         ${
           configPreview[kind]
             ? `<div>
-                <label style="font-size:12px;color:var(--text-secondary)">文件预览</label>
+                <label style="font-size:12px;color:var(--text-secondary)">${t("configs.preview")}</label>
                 <pre class="preview-box">${escapeHtml((configPreview[kind] || "").slice(0, 1200))}</pre>
               </div>`
             : ""
@@ -774,11 +891,94 @@ function renderEmpty() {
     <div class="main-empty">
       <div>
         <div class="empty-icon">◎</div>
-        <h3>选择或添加厂家</h3>
-        <p>配置厂家名称、API Base URL 与 API Key，即可自动获取可用模型，并应用到 Codex / Claude Code。</p>
-        <button class="btn btn-primary" id="btn-add-provider-empty">添加厂家</button>
+        <h3>${t("empty.title")}</h3>
+        <p>${t("empty.desc")}</p>
+        <button class="btn btn-primary" id="btn-add-provider-empty">${t("empty.add")}</button>
       </div>
     </div>
+  `;
+}
+
+function renderTokenPackagePanel(p) {
+  const pkgs = p.tokenPackages || [];
+  const st = providerPackageStatus(p);
+  const pct = Math.min(100, Math.max(0, st.percent || 0));
+  const barColor = st.expired || pct >= 90 ? "var(--danger)" : pct >= 70 ? "var(--warning)" : "var(--success)";
+
+  return `
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h3>${t("pkg.title")}</h3>
+          <p class="desc">${t("pkg.desc")}</p>
+        </div>
+        <div class="actions">
+          <button class="btn btn-sm btn-primary" id="btn-pkg-add">${t("pkg.add")}</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        ${
+          st.hasPackage
+            ? `<div class="test-result ${st.expired || pct >= 90 ? "err" : "ok"}" style="margin-bottom:14px">
+                <div class="test-result-title">${escapeHtml(st.name || t("pkg.current"))}${st.expired ? " · " + t("pkg.expired") : ""}</div>
+                <div class="test-result-grid">
+                  <div class="kv"><label>${t("pkg.total")}</label><div class="value">${formatTokens(st.total)}</div></div>
+                  <div class="kv"><label>${t("pkg.used")}</label><div class="value">${formatTokens(st.used)}</div></div>
+                  <div class="kv"><label>${t("pkg.remaining")}</label><div class="value">${formatTokens(st.remaining)}</div></div>
+                  <div class="kv"><label>${t("pkg.usage")}</label><div class="value">${pct.toFixed(1)}%</div></div>
+                </div>
+                <div style="margin-top:10px;height:8px;background:var(--bg-base);border-radius:999px;overflow:hidden;border:1px solid var(--border)">
+                  <div style="height:100%;width:${pct}%;background:${barColor};transition:width .2s"></div>
+                </div>
+                ${st.expireAt ? `<div class="hint" style="margin-top:8px">${t("pkg.expireAt", { at: escapeHtml(st.expireAt) })}</div>` : ""}
+              </div>`
+            : `<div class="hint" style="margin-bottom:12px">${t("pkg.noPkgHint")}</div>`
+        }
+        <div class="model-table-wrap table-scroll">
+          ${
+            pkgs.length
+              ? `<table class="model-table">
+            <thead>
+              <tr>
+                <th>${t("pkg.colName")}</th>
+                <th>${t("pkg.colTotal")}</th>
+                <th>${t("pkg.colOffset")}</th>
+                <th>${t("pkg.colPrice")}</th>
+                <th>${t("pkg.colPeriod")}</th>
+                <th>${t("pkg.colStatus")}</th>
+                <th style="text-align:right">${t("pkg.colActions")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${pkgs
+                .map(
+                  (pkg) => `<tr data-pkg="${escapeAttr(pkg.id)}">
+                <td>
+                  <div class="model-name">${escapeHtml(pkg.name)}</div>
+                  ${pkg.note ? `<div class="hint">${escapeHtml(pkg.note)}</div>` : ""}
+                </td>
+                <td class="model-id">${formatTokens(pkg.totalTokens)}</td>
+                <td class="model-id">${formatTokens(pkg.usedOffset)}</td>
+                <td>${pkg.price ? `${pkg.price} ${escapeHtml(pkg.currency || "CNY")}` : t("common.dash")}</td>
+                <td class="model-id">${escapeHtml([pkg.startAt, pkg.expireAt].filter(Boolean).join(" ~ ") || t("common.dash"))}</td>
+                <td>${pkg.active ? `<span class="tag ok">${t("common.current")}</span>` : `<span class="tag off">${t("common.standby")}</span>`}</td>
+                <td>
+                  <div class="row-actions">
+                    <button class="btn btn-sm" data-act="pkg-active" ${pkg.active ? "disabled" : ""}>${t("pkg.setCurrent")}</button>
+                    <button class="btn btn-sm" data-act="pkg-edit">${t("common.edit")}</button>
+                    <button class="btn btn-sm btn-ghost" data-act="pkg-del">${t("common.delete")}</button>
+                  </div>
+                </td>
+              </tr>`
+                )
+                .join("")}
+            </tbody>
+          </table>`
+              : `<div class="empty-models"><strong>${t("pkg.empty")}</strong>${t("pkg.emptyHint")}</div>`
+          }
+        </div>
+      </div>
+    </section>
   `;
 }
 
@@ -794,97 +994,99 @@ function renderDetail(p) {
       <section class="panel">
         <div class="panel-head">
           <div>
-            <h3>厂家配置</h3>
-            <p class="desc">名称 · API Base URL · API Key · 持久化到本机</p>
+            <h3>${t("detail.title")}</h3>
+            <p class="desc">${t("detail.desc")}</p>
           </div>
           <div class="actions">
-            <button class="btn btn-danger btn-sm" id="btn-delete-provider">删除厂家</button>
+            <button class="btn btn-danger btn-sm" id="btn-delete-provider">${t("detail.delete")}</button>
           </div>
         </div>
         <div class="panel-body">
           <div class="form-grid">
             <div class="field">
-              <label>厂家名称 <span class="req">*</span></label>
-              <input class="input" id="f-name" value="${escapeAttr(p.name)}" placeholder="例如 OpenAI" />
+              <label>${t("detail.name")} <span class="req">*</span></label>
+              <input class="input" id="f-name" value="${escapeAttr(p.name)}" placeholder="${escapeAttr(t("detail.namePh"))}" />
             </div>
             <div class="field">
-              <label>主题色</label>
+              <label>${t("detail.color")}</label>
               <input class="input" id="f-color" type="color" value="${escapeAttr(p.color || "#3d8bfd")}" style="padding:4px;height:36px" />
             </div>
             <div class="field full">
-              <label>API Base URL <span class="req">*</span></label>
+              <label>${t("detail.base")} <span class="req">*</span></label>
               <input class="input mono" id="f-base" value="${escapeAttr(p.baseUrl)}" placeholder="https://api.openai.com/v1" />
-              <span class="hint">OpenAI 兼容接口：自动请求 {base}/models</span>
+              <span class="hint">${t("detail.baseHint")}</span>
             </div>
             <div class="field full">
-              <label>API Key ${isLocalProviderHint(p.name, p.baseUrl) ? "" : `<span class="req">*</span>`}</label>
+              <label>${t("detail.key")} ${isLocalProviderHint(p.name, p.baseUrl) ? "" : `<span class="req">*</span>`}</label>
               <div class="input-with-action">
                 <input class="input mono" id="f-key" type="${showKey ? "text" : "password"}"
-                  value="${escapeAttr(p.apiKey)}" placeholder="${isLocalProviderHint(p.name, p.baseUrl) ? "Ollama 可填 ollama 或留空" : "sk-..."}" autocomplete="off" />
-                <button class="btn btn-sm" id="btn-toggle-key" type="button">${showKey ? "隐藏" : "显示"}</button>
+                  value="${escapeAttr(p.apiKey)}" placeholder="${escapeAttr(isLocalProviderHint(p.name, p.baseUrl) ? t("detail.keyPhLocal") : t("detail.keyPh"))}" autocomplete="off" />
+                <button class="btn btn-sm" id="btn-toggle-key" type="button">${showKey ? t("detail.hide") : t("detail.show")}</button>
               </div>
-              <span class="hint">密钥保存在 ~/.codex-manager/providers.json（仅本机）</span>
+              <span class="hint">${t("detail.keyHint")}</span>
             </div>
             <div class="field full">
-              <label>访问方式</label>
+              <label>${t("detail.access")}</label>
               <div class="actions" style="margin-top:4px">
                 <label class="stat-pill" style="cursor:pointer;gap:8px">
                   <input type="radio" name="f-proxy-mode" id="f-proxy-on" value="1" ${p.useProxy ? "checked" : ""} />
-                  走本地代理
+                  ${t("detail.viaLocalProxy")}
                 </label>
                 <label class="stat-pill" style="cursor:pointer;gap:8px">
                   <input type="radio" name="f-proxy-mode" id="f-proxy-off" value="0" ${!p.useProxy ? "checked" : ""} />
-                  直连（不代理）
+                  ${t("detail.directNoProxy")}
                 </label>
               </div>
               <span class="hint">
                 ${
                   p.useProxy
-                    ? "保存后自动启动代理，并把该厂家在 Codex 中的 base_url 改为本地代理地址"
-                    : "保存后使用上方 Base URL 直连（适合 Ollama 等本机服务）"
+                    ? t("detail.proxyHintOn")
+                    : t("detail.proxyHintOff")
                 }
               </span>
             </div>
           </div>
           <div class="actions" style="margin-top:16px">
-            <button class="btn btn-primary" id="btn-save">保存配置</button>
+            <button class="btn btn-primary" id="btn-save">${t("detail.save")}</button>
             <button class="btn" id="btn-test" ${testing || fetching ? "disabled" : ""}>
-              ${testing ? `<span class="spinner"></span> 测试中…` : "测试连接"}
+              ${testing ? `<span class="spinner"></span> ${t("detail.testing")}` : t("detail.test")}
             </button>
             <button class="btn" id="btn-fetch" ${fetching || testing ? "disabled" : ""}>
-              ${fetching ? `<span class="spinner"></span> 获取中…` : "自动获取模型"}
+              ${fetching ? `<span class="spinner"></span> ${t("detail.fetching")}` : t("detail.fetch")}
             </button>
           </div>
           ${renderTestResultPanel()}
         </div>
       </section>
 
+      ${renderTokenPackagePanel(p)}
+
       <section class="panel">
         <div class="panel-head">
           <div>
-            <h3>模型列表</h3>
-            <p class="desc">可启用/禁用、设默认，并一键写入 Codex / Claude Code 配置</p>
+            <h3>${t("detail.modelsTitle")}</h3>
+            <p class="desc">${t("detail.modelsDesc")}</p>
           </div>
           <div class="actions">
-            <button class="btn btn-sm" id="btn-refresh-models" ${fetching ? "disabled" : ""}>刷新获取</button>
+            <button class="btn btn-sm" id="btn-refresh-models" ${fetching ? "disabled" : ""}>${t("detail.refreshModels")}</button>
           </div>
         </div>
         <div class="panel-body">
           <div class="models-toolbar">
-            <input class="input search" id="f-search" placeholder="搜索模型 ID / 名称" value="${escapeAttr(modelQuery)}" />
-            <span class="loading-inline">${models.length} / ${(p.models || []).length} 个模型</span>
+            <input class="input search" id="f-search" placeholder="${escapeAttr(t("detail.searchPh"))}" value="${escapeAttr(modelQuery)}" />
+            <span class="loading-inline">${t("detail.modelCount", { shown: models.length, total: (p.models || []).length })}</span>
           </div>
-          <div class="model-table-wrap">
+          <div class="model-table-wrap table-scroll-lg">
             ${
               models.length
                 ? `<table class="model-table">
               <thead>
                 <tr>
-                  <th style="width:44px">启用</th>
-                  <th>模型 ID</th>
-                  <th>名称</th>
-                  <th>状态</th>
-                  <th style="width:280px;text-align:right">操作</th>
+                  <th style="width:44px">${t("detail.colEnable")}</th>
+                  <th>${t("detail.colId")}</th>
+                  <th>${t("detail.colName")}</th>
+                  <th>${t("detail.colStatus")}</th>
+                  <th style="width:280px;text-align:right">${t("detail.colActions")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -892,19 +1094,19 @@ function renderDetail(p) {
                   .map(
                     (m) => `
                   <tr data-model="${escapeAttr(m.id)}">
-                    <td><button class="toggle ${m.enabled ? "on" : ""}" data-act="toggle" title="启用/禁用"></button></td>
+                    <td><button class="toggle ${m.enabled ? "on" : ""}" data-act="toggle" title="${escapeAttr(t("detail.toggleTitle"))}"></button></td>
                     <td><span class="model-id">${escapeHtml(m.id)}</span></td>
                     <td><span class="model-name">${escapeHtml(m.name || m.id)}</span></td>
                     <td>
-                      ${m.isDefault ? `<span class="tag default">默认</span>` : ""}
-                      ${m.enabled ? `<span class="tag ok">启用</span>` : `<span class="tag off">禁用</span>`}
+                      ${m.isDefault ? `<span class="tag default">${t("detail.tagDefault")}</span>` : ""}
+                      ${m.enabled ? `<span class="tag ok">${t("detail.tagOn")}</span>` : `<span class="tag off">${t("detail.tagOff")}</span>`}
                     </td>
                     <td>
                       <div class="row-actions">
-                        <button class="btn btn-sm" data-act="default" ${m.isDefault || !m.enabled ? "disabled" : ""}>设为默认</button>
-                        <button class="btn btn-sm" data-act="to-codex" title="写入 Codex 配置">→ Codex</button>
-                        <button class="btn btn-sm" data-act="to-claude" title="写入 Claude Code 配置（DeepSeek 自动用官方 anthropic 端点）">→ Claude</button>
-                        <button class="btn btn-sm btn-ghost" data-act="remove">移除</button>
+                        <button class="btn btn-sm" data-act="default" ${m.isDefault || !m.enabled ? "disabled" : ""}>${t("detail.setDefault")}</button>
+                        <button class="btn btn-sm" data-act="to-codex" title="${escapeAttr(t("detail.toCodexTitle"))}">${t("detail.toCodex")}</button>
+                        <button class="btn btn-sm" data-act="to-claude" title="${escapeAttr(t("detail.toClaudeTitle"))}">${t("detail.toClaude")}</button>
+                        <button class="btn btn-sm btn-ghost" data-act="remove">${t("detail.remove")}</button>
                       </div>
                     </td>
                   </tr>`
@@ -913,8 +1115,8 @@ function renderDetail(p) {
               </tbody>
             </table>`
                 : `<div class="empty-models">
-                  <strong>${(p.models || []).length ? "没有匹配的模型" : "暂无模型"}</strong>
-                  ${(p.models || []).length ? "试试其他搜索词" : "填写 API 与 Key 后点击「自动获取模型」"}
+                  <strong>${(p.models || []).length ? t("detail.noMatch") : t("detail.noModels")}</strong>
+                  ${(p.models || []).length ? t("detail.trySearch") : t("detail.fetchHint")}
                 </div>`
             }
           </div>
@@ -925,11 +1127,11 @@ function renderDetail(p) {
 }
 
 function formatBackupAt(iso) {
-  if (!iso) return "—";
+  if (!iso) return t("common.dash");
   try {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return iso;
-    return d.toLocaleString();
+    return d.toLocaleString(getLocale() === "zh" ? "zh-CN" : "en-US");
   } catch {
     return iso;
   }
@@ -939,8 +1141,8 @@ function renderTestResultPanel() {
   if (testing) {
     return `
       <div class="test-result loading" style="margin-top:14px">
-        <div class="test-result-title"><span class="spinner"></span> 正在测试连接…</div>
-        <div class="hint">请求 {baseUrl}/models，最长约 30 秒</div>
+        <div class="test-result-title"><span class="spinner"></span> ${t("test.running")}</div>
+        <div class="hint">${t("test.hint")}</div>
       </div>`;
   }
   if (!testResult) return "";
@@ -951,40 +1153,40 @@ function renderTestResultPanel() {
     <div class="test-result ${ok ? "ok" : "err"}" style="margin-top:14px">
       <div class="test-result-title">
         <span class="status-dot ${ok ? "ok" : "fail"}"></span>
-        ${escapeHtml(testResult.message || (ok ? "连接成功" : "连接失败"))}
+        ${escapeHtml(tb(testResult.message || (ok ? t("toast.connOk") : t("toast.connFail"))))}
       </div>
       <div class="test-result-grid">
         <div class="kv">
-          <label>请求地址</label>
-          <div class="value mono-sm">${escapeHtml(testResult.endpoint || "—")}</div>
+          <label>${t("test.endpoint")}</label>
+          <div class="value mono-sm">${escapeHtml(testResult.endpoint || t("common.dash"))}</div>
         </div>
         <div class="kv">
-          <label>HTTP 状态</label>
-          <div class="value">${testResult.statusCode ? escapeHtml(String(testResult.statusCode)) : "—"}</div>
+          <label>${t("test.http")}</label>
+          <div class="value">${testResult.statusCode ? escapeHtml(String(testResult.statusCode)) : t("common.dash")}</div>
         </div>
         <div class="kv">
-          <label>耗时</label>
-          <div class="value">${testResult.latencyMs != null ? `${testResult.latencyMs} ms` : "—"}</div>
+          <label>${t("test.latency")}</label>
+          <div class="value">${testResult.latencyMs != null ? `${testResult.latencyMs} ms` : t("common.dash")}</div>
         </div>
         <div class="kv">
-          <label>模型数量</label>
-          <div class="value">${ok ? escapeHtml(String(testResult.modelCount ?? 0)) : "—"}</div>
+          <label>${t("test.modelCount")}</label>
+          <div class="value">${ok ? escapeHtml(String(testResult.modelCount ?? 0)) : t("common.dash")}</div>
         </div>
       </div>
       ${
         samples.length
           ? `<div class="test-sample">
-              <label>示例模型</label>
+              <label>${t("test.sample")}</label>
               <div class="sample-tags">
                 ${samples.map((s) => `<span class="tag">${escapeHtml(s)}</span>`).join("")}
-                ${(testResult.modelCount || 0) > samples.length ? `<span class="tag off">+${(testResult.modelCount || 0) - samples.length} 更多</span>` : ""}
+                ${(testResult.modelCount || 0) > samples.length ? `<span class="tag off">+${(testResult.modelCount || 0) - samples.length} ${t("common.more")}</span>` : ""}
               </div>
             </div>`
           : ""
       }
       ${
         testResult.error
-          ? `<div class="test-error"><label>错误详情</label><pre class="preview-box">${escapeHtml(testResult.error)}</pre></div>`
+          ? `<div class="test-error"><label>${t("test.errorDetail")}</label><pre class="preview-box">${escapeHtml(tb(testResult.error))}</pre></div>`
           : ""
       }
     </div>
@@ -1021,11 +1223,19 @@ function bindShellEvents() {
       }
     });
   });
+  document.querySelectorAll(".lang-btn").forEach((el) => {
+    el.addEventListener("click", () => {
+      const next = el.dataset.lang;
+      if (!next || next === getLocale()) return;
+      setLocale(next);
+      render();
+    });
+  });
 }
 
 async function refreshProxyStatus() {
   if (!hasBackend() || typeof window.go?.main?.App?.GetProxyStatus !== "function") {
-    proxyStatus = { running: false, lastError: "请在 Wails 应用中运行", logs: [] };
+    proxyStatus = { running: false, lastError: t("toast.runInWailsShort"), logs: [] };
     return;
   }
   try {
@@ -1087,14 +1297,14 @@ function bindProxyEvents() {
     proxyBusy = true;
     render();
     try {
-      if (!hasBackend()) throw new Error("请在 Wails 应用中运行");
+      if (!hasBackend()) throw new Error(t("toast.runInWailsShort"));
       const cfg = readProxyForm();
       await SaveProxyConfig(cfg);
       const st = await StartProxy();
       proxyStatus = normalizeProxyStatus(st);
-      toast(proxyStatus.running ? "代理已启动" : "启动失败", proxyStatus.running ? "ok" : "err");
+      toast(proxyStatus.running ? t("toast.proxyStarted") : t("toast.proxyStartFail"), proxyStatus.running ? "ok" : "err");
     } catch (e) {
-      toast(e?.message || String(e), "err");
+      toast(errMsg(e), "err");
       await refreshProxyStatus();
     } finally {
       proxyBusy = false;
@@ -1108,9 +1318,9 @@ function bindProxyEvents() {
     try {
       const st = await StopProxy();
       proxyStatus = normalizeProxyStatus(st);
-      toast("代理已停止");
+      toast(t("toast.proxyStopped"));
     } catch (e) {
-      toast(e?.message || String(e), "err");
+      toast(errMsg(e), "err");
     } finally {
       proxyBusy = false;
       render();
@@ -1124,9 +1334,9 @@ function bindProxyEvents() {
       const cfg = readProxyForm();
       const st = await SaveProxyConfig(cfg);
       proxyStatus = normalizeProxyStatus(st);
-      toast("代理配置已保存");
+      toast(t("toast.proxySaved"));
     } catch (e) {
-      toast(e?.message || String(e), "err");
+      toast(errMsg(e), "err");
     } finally {
       proxyBusy = false;
       render();
@@ -1137,19 +1347,19 @@ function bindProxyEvents() {
     const v = document.getElementById("proxy-base-url")?.value || "";
     try {
       await navigator.clipboard.writeText(v);
-      toast("已复制 Base URL");
+      toast(t("toast.copiedBase"));
     } catch {
-      toast("复制失败，请手动选择", "err");
+      toast(t("toast.copyFail"), "err");
     }
   });
 }
 
 function renderUsagePage() {
-  const t = usageStats?.total || usageStats?.Total || {};
-  const calls = t.calls ?? t.Calls ?? 0;
-  const input = t.inputTokens ?? t.InputTokens ?? 0;
-  const output = t.outputTokens ?? t.OutputTokens ?? 0;
-  const total = t.totalTokens ?? t.TotalTokens ?? 0;
+  const tot = usageStats?.total || usageStats?.Total || {};
+  const calls = tot.calls ?? tot.Calls ?? 0;
+  const input = tot.inputTokens ?? tot.InputTokens ?? 0;
+  const output = tot.outputTokens ?? tot.OutputTokens ?? 0;
+  const totalTok = tot.totalTokens ?? tot.TotalTokens ?? 0;
   const byModel = usageStats?.byModel || usageStats?.ByModel || [];
   const byProvider = usageStats?.byProvider || usageStats?.ByProvider || [];
   const byDay = usageStats?.byDay || usageStats?.ByDay || [];
@@ -1160,13 +1370,13 @@ function renderUsagePage() {
     const c = b.calls ?? b.Calls ?? 0;
     const i = b.inputTokens ?? b.InputTokens ?? 0;
     const o = b.outputTokens ?? b.OutputTokens ?? 0;
-    const tot = b.totalTokens ?? b.TotalTokens ?? 0;
+    const sum = b.totalTokens ?? b.TotalTokens ?? 0;
     return `<tr>
       <td class="model-id">${escapeHtml(key)}</td>
       <td>${c}</td>
       <td>${i.toLocaleString()}</td>
       <td>${o.toLocaleString()}</td>
-      <td><strong>${tot.toLocaleString()}</strong></td>
+      <td><strong>${sum.toLocaleString()}</strong></td>
     </tr>`;
   };
 
@@ -1175,57 +1385,57 @@ function renderUsagePage() {
       <div class="config-page">
         <div class="config-hero">
           <div>
-            <h2>Token 使用统计</h2>
-            <p>统计经本地代理转发的请求用量（输入 / 输出 / 合计）。仅记录代理链路，直连 Ollama 不经过代理则不计入。</p>
+            <h2>${t("usage.title")}</h2>
+            <p>${t("usage.desc")}</p>
           </div>
           <div class="actions">
-            <button class="btn" id="btn-usage-refresh" ${usageBusy ? "disabled" : ""}>刷新</button>
-            <button class="btn btn-ghost" id="btn-usage-clear" ${usageBusy ? "disabled" : ""}>清空统计</button>
+            <button class="btn" id="btn-usage-refresh" ${usageBusy ? "disabled" : ""}>${t("usage.refresh")}</button>
+            <button class="btn btn-ghost" id="btn-usage-clear" ${usageBusy ? "disabled" : ""}>${t("usage.clear")}</button>
           </div>
         </div>
 
         <div class="config-grid" style="grid-template-columns:repeat(4,1fr)">
           <section class="config-card" style="min-height:auto">
             <div class="config-card-body">
-              <div class="kv"><label>请求次数</label><div class="value" style="font-size:22px;font-weight:700">${calls}</div></div>
+              <div class="kv"><label>${t("usage.calls")}</label><div class="value" style="font-size:22px;font-weight:700">${calls}</div></div>
             </div>
           </section>
           <section class="config-card" style="min-height:auto">
             <div class="config-card-body">
-              <div class="kv"><label>输入 Tokens</label><div class="value" style="font-size:22px;font-weight:700">${Number(input).toLocaleString()}</div></div>
+              <div class="kv"><label>${t("usage.input")}</label><div class="value" style="font-size:22px;font-weight:700">${Number(input).toLocaleString()}</div></div>
             </div>
           </section>
           <section class="config-card" style="min-height:auto">
             <div class="config-card-body">
-              <div class="kv"><label>输出 Tokens</label><div class="value" style="font-size:22px;font-weight:700">${Number(output).toLocaleString()}</div></div>
+              <div class="kv"><label>${t("usage.output")}</label><div class="value" style="font-size:22px;font-weight:700">${Number(output).toLocaleString()}</div></div>
             </div>
           </section>
           <section class="config-card" style="min-height:auto">
             <div class="config-card-body">
-              <div class="kv"><label>合计 Tokens</label><div class="value" style="font-size:22px;font-weight:700;color:var(--accent)">${Number(total).toLocaleString()}</div></div>
+              <div class="kv"><label>${t("usage.total")}</label><div class="value" style="font-size:22px;font-weight:700;color:var(--accent)">${Number(totalTok).toLocaleString()}</div></div>
             </div>
           </section>
         </div>
 
         <div class="config-grid">
           <section class="config-card">
-            <div class="config-card-head"><h3>按模型</h3></div>
+            <div class="config-card-head"><h3>${t("usage.byModel")}</h3></div>
             <div class="config-card-body">
-              <div class="model-table-wrap">
+              <div class="model-table-wrap table-scroll">
                 <table class="model-table">
-                  <thead><tr><th>模型</th><th>次数</th><th>输入</th><th>输出</th><th>合计</th></tr></thead>
-                  <tbody>${byModel.length ? byModel.map(rowBucket).join("") : `<tr><td colspan="5">暂无数据</td></tr>`}</tbody>
+                  <thead><tr><th>${t("usage.colModel")}</th><th>${t("usage.colCalls")}</th><th>${t("usage.colInput")}</th><th>${t("usage.colOutput")}</th><th>${t("usage.colTotal")}</th></tr></thead>
+                  <tbody>${byModel.length ? byModel.map(rowBucket).join("") : `<tr><td colspan="5">${t("usage.noData")}</td></tr>`}</tbody>
                 </table>
               </div>
             </div>
           </section>
           <section class="config-card">
-            <div class="config-card-head"><h3>按厂家</h3></div>
+            <div class="config-card-head"><h3>${t("usage.byProvider")}</h3></div>
             <div class="config-card-body">
-              <div class="model-table-wrap">
+              <div class="model-table-wrap table-scroll">
                 <table class="model-table">
-                  <thead><tr><th>厂家</th><th>次数</th><th>输入</th><th>输出</th><th>合计</th></tr></thead>
-                  <tbody>${byProvider.length ? byProvider.map(rowBucket).join("") : `<tr><td colspan="5">暂无数据</td></tr>`}</tbody>
+                  <thead><tr><th>${t("usage.colProvider")}</th><th>${t("usage.colCalls")}</th><th>${t("usage.colInput")}</th><th>${t("usage.colOutput")}</th><th>${t("usage.colTotal")}</th></tr></thead>
+                  <tbody>${byProvider.length ? byProvider.map(rowBucket).join("") : `<tr><td colspan="5">${t("usage.noData")}</td></tr>`}</tbody>
                 </table>
               </div>
             </div>
@@ -1233,23 +1443,23 @@ function renderUsagePage() {
         </div>
 
         <section class="panel" style="margin-top:4px">
-          <div class="panel-head"><div><h3>按日（近 30 天）</h3></div></div>
+          <div class="panel-head"><div><h3>${t("usage.byDay")}</h3></div></div>
           <div class="panel-body">
-            <div class="model-table-wrap">
+            <div class="model-table-wrap table-scroll-lg">
               <table class="model-table">
-                <thead><tr><th>日期</th><th>次数</th><th>输入</th><th>输出</th><th>合计</th></tr></thead>
-                <tbody>${byDay.length ? byDay.map(rowBucket).join("") : `<tr><td colspan="5">暂无数据</td></tr>`}</tbody>
+                <thead><tr><th>${t("usage.colDate")}</th><th>${t("usage.colCalls")}</th><th>${t("usage.colInput")}</th><th>${t("usage.colOutput")}</th><th>${t("usage.colTotal")}</th></tr></thead>
+                <tbody>${byDay.length ? byDay.map(rowBucket).join("") : `<tr><td colspan="5">${t("usage.noData")}</td></tr>`}</tbody>
               </table>
             </div>
           </div>
         </section>
 
         <section class="panel" style="margin-top:4px">
-          <div class="panel-head"><div><h3>最近请求</h3><p class="desc">最多 50 条</p></div></div>
+          <div class="panel-head"><div><h3>${t("usage.recent")}</h3><p class="desc">${t("usage.recentDesc")}</p></div></div>
           <div class="panel-body">
-            <div class="model-table-wrap" style="max-height:280px;overflow:auto">
+            <div class="model-table-wrap table-scroll-lg">
               <table class="model-table">
-                <thead><tr><th>时间</th><th>厂家</th><th>模型</th><th>端点</th><th>输入</th><th>输出</th><th>合计</th></tr></thead>
+                <thead><tr><th>${t("usage.colTime")}</th><th>${t("usage.colProvider")}</th><th>${t("usage.colModel")}</th><th>${t("usage.colEndpoint")}</th><th>${t("usage.colInput")}</th><th>${t("usage.colOutput")}</th><th>${t("usage.colTotal")}</th></tr></thead>
                 <tbody>
                   ${
                     recent.length
@@ -1267,7 +1477,7 @@ function renderUsagePage() {
                             </tr>`;
                           })
                           .join("")
-                      : `<tr><td colspan="7">暂无记录。请启动代理并用 Codex 经代理访问后刷新。</td></tr>`
+                      : `<tr><td colspan="7">${t("usage.noRecent")}</td></tr>`
                   }
                 </tbody>
               </table>
@@ -1288,7 +1498,7 @@ async function loadUsageStats() {
   try {
     usageStats = await GetUsageStats();
   } catch (e) {
-    toast(e?.message || String(e), "err");
+    toast(errMsg(e), "err");
   } finally {
     usageBusy = false;
   }
@@ -1298,17 +1508,17 @@ function bindUsageEvents() {
   document.getElementById("btn-usage-refresh")?.addEventListener("click", async () => {
     await loadUsageStats();
     render();
-    toast("统计已刷新");
+    toast(t("toast.usageRefreshed"));
   });
   document.getElementById("btn-usage-clear")?.addEventListener("click", async () => {
-    if (!confirm("确定清空全部 Token 统计？此操作不可恢复。")) return;
+    if (!confirm(t("confirm.clearUsage"))) return;
     try {
-      if (!hasBackend()) throw new Error("请在 Wails 应用中运行");
+      if (!hasBackend()) throw new Error(t("toast.runInWailsShort"));
       usageStats = await ClearUsageStats();
-      toast("已清空统计");
+      toast(t("toast.usageCleared"));
       render();
     } catch (e) {
-      toast(e?.message || String(e), "err");
+      toast(errMsg(e), "err");
     }
   });
 }
@@ -1322,13 +1532,13 @@ function bindConfigEvents() {
       configsBusy = kind;
       render();
       try {
-        if (!hasBackend()) throw new Error("请在 Wails 应用中运行");
+        if (!hasBackend()) throw new Error(t("toast.runInWailsShort"));
         const st = await ClearToolConfigPath(kind);
         await applyToolStatus(st);
-        if (!st.found) toast(`${st.name} 自动搜索失败，请手动选择`, "err");
-        else toast(`${st.name} 已定位`);
+        if (!st.found) toast(t("toast.scanFail", { name: st.name }), "err");
+        else toast(t("toast.located", { name: st.name }));
       } catch (e) {
-        toast(e?.message || String(e), "err");
+        toast(errMsg(e), "err");
       } finally {
         configsBusy = "";
         render();
@@ -1342,12 +1552,12 @@ function bindConfigEvents() {
       configsBusy = kind;
       render();
       try {
-        if (!hasBackend()) throw new Error("请在 Wails 应用中运行");
+        if (!hasBackend()) throw new Error(t("toast.runInWailsShort"));
         const st = await PickToolConfig(kind);
         await applyToolStatus(st);
-        if (st.found) toast(`已选择 ${st.path}`);
+        if (st.found) toast(t("toast.picked", { path: st.path }));
       } catch (e) {
-        toast(e?.message || String(e), "err");
+        toast(errMsg(e), "err");
       } finally {
         configsBusy = "";
         render();
@@ -1361,10 +1571,10 @@ function bindConfigEvents() {
       try {
         const st = await ClearToolConfigPath(kind);
         await applyToolStatus(st);
-        toast("已清除手动路径并重新搜索");
+        toast(t("toast.clearedPath"));
         render();
       } catch (e) {
-        toast(e?.message || String(e), "err");
+        toast(errMsg(e), "err");
       }
     });
   });
@@ -1375,7 +1585,7 @@ function bindConfigEvents() {
       try {
         await RevealConfigPath(toolConfigs[kind]?.path || "");
       } catch (e) {
-        toast(e?.message || String(e), "err");
+        toast(errMsg(e), "err");
       }
     });
   });
@@ -1386,12 +1596,12 @@ function bindConfigEvents() {
       configsBusy = kind;
       render();
       try {
-        if (!hasBackend()) throw new Error("请在 Wails 应用中运行");
+        if (!hasBackend()) throw new Error(t("toast.runInWailsShort"));
         const st = await BackupDefaultConfig(kind, toolConfigs[kind]?.path || "");
         await applyToolStatus(st);
-        toast(st.message || "已备份为默认配置");
+        toast(tb(st.message) || t("toast.backedUp"));
       } catch (e) {
-        toast(e?.message || String(e), "err");
+        toast(errMsg(e), "err");
       } finally {
         configsBusy = "";
         render();
@@ -1404,7 +1614,7 @@ function bindConfigEvents() {
       configsBusy = "claude";
       render();
       try {
-        if (!hasBackend()) throw new Error("请在 Wails 应用中运行");
+        if (!hasBackend()) throw new Error(t("toast.runInWailsShort"));
         // prefer DeepSeek provider key from app storage
         const ds =
           providers.find((p) => {
@@ -1425,9 +1635,9 @@ function bindConfigEvents() {
           setSystemEnv: true,
         });
         await applyToolStatus(st);
-        toast(st.message || "已迁移 Claude Code → DeepSeek");
+        toast(tb(st.message) || t("toast.deepseekMigrated"));
       } catch (e) {
-        toast(e?.message || String(e), "err");
+        toast(errMsg(e), "err");
       } finally {
         configsBusy = "";
         render();
@@ -1439,16 +1649,16 @@ function bindConfigEvents() {
     btn.addEventListener("click", async () => {
       const kind = btn.dataset.kind;
       const name = toolConfigs[kind]?.name || kind;
-      if (!confirm(`确定将「${name}」还原为默认备份？\n当前配置会先写入历史快照。`)) return;
+      if (!confirm(t("confirm.restoreDefault", { name }))) return;
       configsBusy = kind;
       render();
       try {
-        if (!hasBackend()) throw new Error("请在 Wails 应用中运行");
+        if (!hasBackend()) throw new Error(t("toast.runInWailsShort"));
         const st = await RestoreDefaultConfig(kind);
         await applyToolStatus(st);
-        toast(st.message || "已还原默认配置");
+        toast(tb(st.message) || t("toast.restored"));
       } catch (e) {
-        toast(e?.message || String(e), "err");
+        toast(errMsg(e), "err");
       } finally {
         configsBusy = "";
         render();
@@ -1459,16 +1669,16 @@ function bindConfigEvents() {
   document.querySelectorAll("[data-act='clear-backup']").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const kind = btn.dataset.kind;
-      if (!confirm("清除默认备份后，将无法还原。确定？")) return;
+      if (!confirm(t("confirm.clearBackup"))) return;
       configsBusy = kind;
       render();
       try {
-        if (!hasBackend()) throw new Error("请在 Wails 应用中运行");
+        if (!hasBackend()) throw new Error(t("toast.runInWailsShort"));
         const st = await ClearDefaultBackup(kind);
         await applyToolStatus(st);
-        toast(st.message || "已清除默认备份");
+        toast(tb(st.message) || t("toast.backupCleared"));
       } catch (e) {
-        toast(e?.message || String(e), "err");
+        toast(errMsg(e), "err");
       } finally {
         configsBusy = "";
         render();
@@ -1517,17 +1727,17 @@ function bindConfigEvents() {
         document.querySelector(`[data-act='provider-input'][data-kind='${kind}']`)?.value?.trim() ||
         pendingProvider[kind] ||
         "";
-      if (!model) return toast("请选择或输入模型", "err");
+      if (!model) return toast(t("toast.selectModel"), "err");
       let usePath = toolConfigs[kind]?.path || "";
       configsBusy = kind;
       render();
       try {
-        if (!hasBackend()) throw new Error("请在 Wails 应用中运行");
+        if (!hasBackend()) throw new Error(t("toast.runInWailsShort"));
         if (!toolConfigs[kind]?.exists) {
-          toast("配置文件不存在，请先手动选择路径", "err");
+          toast(t("toast.configMissing"), "err");
           const st = await PickToolConfig(kind);
           await applyToolStatus(st);
-          if (!st.path) throw new Error("未选择路径");
+          if (!st.path) throw new Error(t("toast.noPath"));
           usePath = st.path;
         }
         // try match provider from our saved vendors
@@ -1542,9 +1752,9 @@ function bindConfigEvents() {
           name: matched?.name || model,
         });
         await applyToolStatus(st);
-        toast(st.message || `已切换为 ${model}`);
+        toast(tb(st.message) || t("toast.switched", { model }));
       } catch (e) {
-        toast(e?.message || String(e), "err");
+        toast(errMsg(e), "err");
       } finally {
         configsBusy = "";
         render();
@@ -1600,21 +1810,21 @@ function readFormInto(p) {
 }
 
 async function applyModelToTool(kind, modelId) {
-  if (!hasBackend()) throw new Error("请在 Wails 应用中运行");
+  if (!hasBackend()) throw new Error(t("toast.runInWailsShort"));
   // ensure configs loaded
   if (!toolConfigs[kind]) {
     await loadToolConfigs(false);
   }
   let st = toolConfigs[kind];
   if (!st?.exists) {
-    toast(`${kind === "codex" ? "Codex" : "Claude"} 配置未找到，请手动选择`, "err");
+    toast(t("toast.toolConfigMissing", { tool: kind === "codex" ? "Codex" : "Claude" }), "err");
     page = "configs";
     localStorage.setItem(PAGE_KEY, page);
     render();
     await loadToolConfigs(false);
     st = await PickToolConfig(kind);
     await applyToolStatus(st);
-    if (!st?.path) throw new Error("未选择配置文件");
+    if (!st?.path) throw new Error(t("toast.noConfigPath"));
   }
   const path = toolConfigs[kind]?.path || st.path;
   const p = selected();
@@ -1681,8 +1891,8 @@ function bindProviderEvents() {
 
   document.getElementById("btn-save")?.addEventListener("click", async () => {
     readFormInto(p);
-    if (!p.name.trim()) return toast("请填写厂家名称", "err");
-    if (!p.baseUrl.trim()) return toast("请填写 API Base URL", "err");
+    if (!p.name.trim()) return toast(t("toast.needName"), "err");
+    if (!p.baseUrl.trim()) return toast(t("toast.needBase"), "err");
     try {
       await persistProviders();
       // SaveProviders backend already EnsureProxyRouting; refresh proxy status for UI
@@ -1692,11 +1902,45 @@ function bindProviderEvents() {
           proxyStatus = normalizeProxyStatus(st);
         } catch (_) {}
       }
-      toast(p.useProxy ? "已保存，并自动配置本地代理" : "已保存（直连模式）");
+      await loadPackageStatuses();
+      toast(p.useProxy ? t("toast.savedProxy") : t("toast.savedDirect"));
       render();
     } catch (e) {
-      toast(e?.message || String(e), "err");
+      toast(errMsg(e), "err");
     }
+  });
+
+  document.getElementById("btn-pkg-add")?.addEventListener("click", () => openPackageModal(p, null));
+
+  document.querySelectorAll("[data-pkg]").forEach((row) => {
+    const pkgId = row.dataset.pkg;
+    row.querySelector('[data-act="pkg-active"]')?.addEventListener("click", async () => {
+      (p.tokenPackages || []).forEach((x) => (x.active = x.id === pkgId));
+      try {
+        await persistProviders();
+        await loadPackageStatuses();
+        toast(t("toast.pkgActive"));
+        render();
+      } catch (e) {
+        toast(errMsg(e), "err");
+      }
+    });
+    row.querySelector('[data-act="pkg-edit"]')?.addEventListener("click", () => {
+      const pkg = (p.tokenPackages || []).find((x) => x.id === pkgId);
+      if (pkg) openPackageModal(p, pkg);
+    });
+    row.querySelector('[data-act="pkg-del"]')?.addEventListener("click", async () => {
+      if (!confirm(t("confirm.deletePkg"))) return;
+      p.tokenPackages = (p.tokenPackages || []).filter((x) => x.id !== pkgId);
+      try {
+        await persistProviders();
+        await loadPackageStatuses();
+        toast(t("toast.pkgDeleted"));
+        render();
+      } catch (e) {
+        toast(errMsg(e), "err");
+      }
+    });
   });
 
   document.getElementById("f-proxy-on")?.addEventListener("change", () => {
@@ -1714,8 +1958,8 @@ function bindProviderEvents() {
     if (!p.baseUrl.trim() || (!local && !p.apiKey.trim())) {
       testResult = {
         ok: false,
-        message: "测试失败",
-        error: local ? "请先填写 API Base URL" : "请先填写 API Base URL 与 API Key",
+        message: t("toast.testFail"),
+        error: local ? t("toast.needBaseOnly") : t("toast.needBaseAndKey"),
       };
       toast(testResult.error, "err");
       render();
@@ -1728,8 +1972,8 @@ function bindProviderEvents() {
       if (!hasBackend()) {
         testResult = {
           ok: false,
-          message: "无法测试",
-          error: "请在 Wails 应用中运行（wails dev）",
+          message: t("toast.cannotTest"),
+          error: t("toast.runInWails"),
           endpoint: `${p.baseUrl.replace(/\/$/, "")}/models`,
         };
         toast(testResult.error, "err");
@@ -1747,11 +1991,11 @@ function bindProviderEvents() {
         sample: res?.sample || res?.Sample || [],
         error: res?.error || res?.Error || "",
       };
-      toast(testResult.message || (testResult.ok ? "连接成功" : "连接失败"), testResult.ok ? "ok" : "err");
+      toast(tb(testResult.message) || (testResult.ok ? t("toast.connOk") : t("toast.connFail")), testResult.ok ? "ok" : "err");
     } catch (e) {
       testResult = {
         ok: false,
-        message: "测试异常",
+        message: t("toast.testException"),
         error: e?.message || String(e),
         endpoint: `${p.baseUrl.replace(/\/$/, "")}/models`,
       };
@@ -1764,17 +2008,17 @@ function bindProviderEvents() {
 
   const doFetch = async () => {
     readFormInto(p);
-    if (!p.name.trim() || !p.baseUrl.trim()) return toast("请先完善名称与 API", "err");
-    if (!p.apiKey.trim()) return toast("请先填写 API Key", "err");
+    if (!p.name.trim() || !p.baseUrl.trim()) return toast(t("toast.needNameAndApi"), "err");
+    if (!p.apiKey.trim()) return toast(t("toast.needKey"), "err");
     fetching = true;
     render();
     try {
       const list = await fetchModelsFromApi(p);
       mergeFetchedModels(p, list);
       await persistProviders();
-      toast(`已获取 ${list.length} 个模型`);
+      toast(t("toast.fetchedModels", { n: list.length }));
     } catch (e) {
-      toast(e?.message || String(e), "err");
+      toast(errMsg(e), "err");
     } finally {
       fetching = false;
       render();
@@ -1785,15 +2029,15 @@ function bindProviderEvents() {
   document.getElementById("btn-refresh-models")?.addEventListener("click", doFetch);
 
   document.getElementById("btn-delete-provider")?.addEventListener("click", async () => {
-    if (!confirm(`确定删除厂家「${p.name}」及其模型？`)) return;
+    if (!confirm(t("confirm.deleteProvider", { name: p.name }))) return;
     providers = providers.filter((x) => x.id !== p.id);
     selectedId = providers[0]?.id ?? null;
     try {
       await persistProviders();
-      toast("已删除厂家");
+      toast(t("toast.deletedProvider"));
       render();
     } catch (e) {
-      toast(e?.message || String(e), "err");
+      toast(errMsg(e), "err");
     }
   });
 
@@ -1820,7 +2064,7 @@ function bindProviderEvents() {
         await persistProviders();
         render();
       } catch (e) {
-        toast(e?.message || String(e), "err");
+        toast(errMsg(e), "err");
       }
     });
     row.querySelector('[data-act="default"]')?.addEventListener("click", async () => {
@@ -1829,10 +2073,10 @@ function bindProviderEvents() {
       if (m) m.enabled = true;
       try {
         await persistProviders();
-        toast(`默认模型：${mid}`);
+        toast(t("toast.defaultModel", { id: mid }));
         render();
       } catch (e) {
-        toast(e?.message || String(e), "err");
+        toast(errMsg(e), "err");
       }
     });
     row.querySelector('[data-act="remove"]')?.addEventListener("click", async () => {
@@ -1841,25 +2085,165 @@ function bindProviderEvents() {
         await persistProviders();
         render();
       } catch (e) {
-        toast(e?.message || String(e), "err");
+        toast(errMsg(e), "err");
       }
     });
     row.querySelector('[data-act="to-codex"]')?.addEventListener("click", async () => {
       try {
         const st = await applyModelToTool("codex", mid);
-        toast(st.message || `已写入 Codex：${mid}`);
+        toast(tb(st.message) || t("toast.wroteCodex", { id: mid }));
       } catch (e) {
-        toast(e?.message || String(e), "err");
+        toast(errMsg(e), "err");
       }
     });
     row.querySelector('[data-act="to-claude"]')?.addEventListener("click", async () => {
       try {
         const st = await applyModelToTool("claude", mid);
-        toast(st.message || `已写入 Claude：${mid}`);
+        toast(tb(st.message) || t("toast.wroteClaude", { id: mid }));
       } catch (e) {
-        toast(e?.message || String(e), "err");
+        toast(errMsg(e), "err");
       }
     });
+  });
+}
+
+function parseTokenAmount(raw) {
+  // support 1000000, 100万, 1亿, 1M, 1B, 1e6
+  const s = String(raw || "").trim().replace(/,/g, "");
+  if (!s) return 0;
+  if (/万$/.test(s)) return Math.round(parseFloat(s) * 10000) || 0;
+  if (/亿$/.test(s)) return Math.round(parseFloat(s) * 1e8) || 0;
+  if (/[bB]$/.test(s)) return Math.round(parseFloat(s) * 1e9) || 0;
+  if (/[mM]$/.test(s)) return Math.round(parseFloat(s) * 1e6) || 0;
+  if (/[kK]$/.test(s)) return Math.round(parseFloat(s) * 1e3) || 0;
+  const n = Number(s);
+  return Number.isFinite(n) ? Math.round(n) : 0;
+}
+
+function openPackageModal(provider, existing) {
+  const root = document.getElementById("modal-root");
+  const isEdit = !!existing;
+  const pkg = existing || {
+    id: uid(),
+    name: "",
+    totalTokens: 1000000,
+    usedOffset: 0,
+    price: 0,
+    currency: "CNY",
+    startAt: new Date().toISOString().slice(0, 10),
+    expireAt: "",
+    note: "",
+    active: !(provider.tokenPackages || []).some((x) => x.active),
+  };
+  root.innerHTML = `
+    <div class="modal-backdrop" id="modal-backdrop">
+      <div class="modal" role="dialog" aria-modal="true">
+        <div class="modal-head">
+          <h3>${isEdit ? t("modal.pkgEdit") : t("modal.pkgAdd")}</h3>
+          <button class="btn btn-sm btn-ghost" id="modal-close">${t("common.close")}</button>
+        </div>
+        <div class="modal-body">
+          <div class="field">
+            <label>${t("modal.pkgName")} <span class="req">*</span></label>
+            <input class="input" id="pkg-name" value="${escapeAttr(pkg.name)}" placeholder="${escapeAttr(t("modal.pkgNamePh"))}" />
+          </div>
+          <div class="field">
+            <label>${t("modal.pkgTotal")} <span class="req">*</span></label>
+            <input class="input mono" id="pkg-total" value="${escapeAttr(String(pkg.totalTokens || ""))}" placeholder="${escapeAttr(t("modal.pkgTotalPh"))}" />
+            <span class="hint">${t("modal.pkgTotalHint")}</span>
+          </div>
+          <div class="field">
+            <label>${t("modal.pkgOffset")}</label>
+            <input class="input mono" id="pkg-offset" value="${escapeAttr(String(pkg.usedOffset || 0))}" placeholder="0" />
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label>${t("modal.pkgPrice")}</label>
+              <input class="input mono" id="pkg-price" type="number" step="0.01" value="${escapeAttr(String(pkg.price || 0))}" />
+            </div>
+            <div class="field">
+              <label>${t("modal.pkgCurrency")}</label>
+              <select class="select" id="pkg-currency">
+                ${["CNY", "USD", "USDT"].map((c) => `<option value="${c}" ${pkg.currency === c ? "selected" : ""}>${c}</option>`).join("")}
+              </select>
+            </div>
+            <div class="field">
+              <label>${t("modal.pkgStart")}</label>
+              <input class="input" id="pkg-start" type="date" value="${escapeAttr(pkg.startAt || "")}" />
+            </div>
+            <div class="field">
+              <label>${t("modal.pkgExpire")}</label>
+              <input class="input" id="pkg-expire" type="date" value="${escapeAttr(pkg.expireAt || "")}" />
+            </div>
+          </div>
+          <div class="field">
+            <label>${t("modal.pkgNote")}</label>
+            <input class="input" id="pkg-note" value="${escapeAttr(pkg.note || "")}" placeholder="${escapeAttr(t("modal.pkgNotePh"))}" />
+          </div>
+          <label class="stat-pill" style="cursor:pointer;gap:8px;display:inline-flex;margin-top:4px">
+            <input type="checkbox" id="pkg-active" ${pkg.active ? "checked" : ""} />
+            ${t("modal.pkgSetActive")}
+          </label>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" id="modal-cancel">${t("common.cancel")}</button>
+          <button class="btn btn-primary" id="modal-ok">${t("common.save")}</button>
+        </div>
+      </div>
+    </div>
+  `;
+  const close = () => {
+    root.innerHTML = "";
+  };
+  document.getElementById("modal-close")?.addEventListener("click", close);
+  document.getElementById("modal-cancel")?.addEventListener("click", close);
+  document.getElementById("modal-backdrop")?.addEventListener("click", (e) => {
+    if (e.target.id === "modal-backdrop") close();
+  });
+  document.getElementById("modal-ok")?.addEventListener("click", async () => {
+    const name = document.getElementById("pkg-name").value.trim();
+    const totalTokens = parseTokenAmount(document.getElementById("pkg-total").value);
+    const usedOffset = parseTokenAmount(document.getElementById("pkg-offset").value);
+    const price = Number(document.getElementById("pkg-price").value) || 0;
+    const currency = document.getElementById("pkg-currency").value || "CNY";
+    const startAt = document.getElementById("pkg-start").value || "";
+    const expireAt = document.getElementById("pkg-expire").value || "";
+    const note = document.getElementById("pkg-note").value.trim();
+    const active = !!document.getElementById("pkg-active").checked;
+    if (!name) return toast(t("toast.needPkgName"), "err");
+    if (totalTokens <= 0) return toast(t("toast.needPkgTotal"), "err");
+    if (!provider.tokenPackages) provider.tokenPackages = [];
+    const next = {
+      id: pkg.id || uid(),
+      name,
+      totalTokens,
+      usedOffset,
+      price,
+      currency,
+      startAt,
+      expireAt,
+      note,
+      active,
+    };
+    if (active) {
+      provider.tokenPackages.forEach((x) => (x.active = false));
+    }
+    const idx = provider.tokenPackages.findIndex((x) => x.id === next.id);
+    if (idx >= 0) provider.tokenPackages[idx] = next;
+    else provider.tokenPackages.push(next);
+    // if no active at all, make this active
+    if (!provider.tokenPackages.some((x) => x.active)) {
+      next.active = true;
+    }
+    try {
+      await persistProviders();
+      await loadPackageStatuses();
+      close();
+      toast(isEdit ? t("toast.pkgUpdated") : t("toast.pkgAdded"));
+      render();
+    } catch (e) {
+      toast(errMsg(e), "err");
+    }
   });
 }
 
@@ -1869,39 +2253,39 @@ function openAddModal() {
     <div class="modal-backdrop" id="modal-backdrop">
       <div class="modal" role="dialog" aria-modal="true">
         <div class="modal-head">
-          <h3>添加厂家</h3>
-          <button class="btn btn-sm btn-ghost" id="modal-close">关闭</button>
+          <h3>${t("modal.addProvider")}</h3>
+          <button class="btn btn-sm btn-ghost" id="modal-close">${t("common.close")}</button>
         </div>
         <div class="modal-body">
           <div class="field">
-            <label>快速预设</label>
+            <label>${t("modal.preset")}</label>
             <select class="select" id="m-preset">
-              ${PRESETS.map((x, i) => `<option value="${i}">${escapeHtml(x.name)}</option>`).join("")}
+              ${PRESETS.map((x, i) => `<option value="${i}">${escapeHtml(presetDisplayName(x))}</option>`).join("")}
             </select>
           </div>
           <div class="field">
-            <label>厂家名称 <span class="req">*</span></label>
-            <input class="input" id="m-name" value="${escapeAttr(PRESETS[0].name)}" />
+            <label>${t("detail.name")} <span class="req">*</span></label>
+            <input class="input" id="m-name" value="${escapeAttr(presetDisplayName(PRESETS[0]))}" />
           </div>
           <div class="field">
-            <label>API Base URL <span class="req">*</span></label>
+            <label>${t("detail.base")} <span class="req">*</span></label>
             <input class="input mono" id="m-base" value="${escapeAttr(PRESETS[0].baseUrl)}" />
           </div>
           <div class="field">
-            <label>API Key</label>
-            <input class="input mono" id="m-key" type="password" placeholder="Ollama 可填 ollama" value="${escapeAttr(PRESETS[0].apiKey || "")}" />
+            <label>${t("detail.key")}</label>
+            <input class="input mono" id="m-key" type="password" placeholder="${escapeAttr(t("detail.keyPhLocal"))}" value="${escapeAttr(PRESETS[0].apiKey || "")}" />
           </div>
           <div class="field">
-            <label>访问方式</label>
+            <label>${t("modal.access")}</label>
             <select class="select" id="m-proxy">
-              <option value="0" ${PRESETS[0].useProxy === false ? "selected" : ""}>直连（不代理）</option>
-              <option value="1" ${PRESETS[0].useProxy !== false ? "selected" : ""}>走本地代理</option>
+              <option value="0" ${PRESETS[0].useProxy === false ? "selected" : ""}>${t("detail.directNoProxy")}</option>
+              <option value="1" ${PRESETS[0].useProxy !== false ? "selected" : ""}>${t("detail.viaLocalProxy")}</option>
             </select>
           </div>
         </div>
         <div class="modal-foot">
-          <button class="btn" id="modal-cancel">取消</button>
-          <button class="btn btn-primary" id="modal-ok">添加</button>
+          <button class="btn" id="modal-cancel">${t("common.cancel")}</button>
+          <button class="btn btn-primary" id="modal-ok">${t("common.add")}</button>
         </div>
       </div>
     </div>
@@ -1914,7 +2298,7 @@ function openAddModal() {
   document.getElementById("m-preset")?.addEventListener("change", (e) => {
     const preset = PRESETS[Number(e.target.value)];
     if (!preset) return;
-    document.getElementById("m-name").value = preset.name === "自定义" ? "" : preset.name;
+    document.getElementById("m-name").value = isCustomPreset(preset) ? "" : presetDisplayName(preset);
     document.getElementById("m-base").value = preset.baseUrl === "https://" ? "" : preset.baseUrl;
     const keyEl = document.getElementById("m-key");
     if (keyEl) keyEl.value = preset.apiKey || "";
@@ -1937,8 +2321,8 @@ function openAddModal() {
     const useProxy = document.getElementById("m-proxy")?.value === "1";
     if (!apiKey && isLocalProviderHint(name, baseUrl)) apiKey = "ollama";
 
-    if (!name) return toast("请填写厂家名称", "err");
-    if (!baseUrl) return toast("请填写 API Base URL", "err");
+    if (!name) return toast(t("toast.needName"), "err");
+    if (!baseUrl) return toast(t("toast.needBase"), "err");
 
     const item = {
       id: name.toLowerCase() === "ollama" ? "ollama" : uid(),
@@ -1956,14 +2340,15 @@ function openAddModal() {
     try {
       await persistProviders();
       close();
-      toast(`已添加 ${name}`);
+      toast(t("toast.addedProvider", { name }));
       render();
     } catch (e) {
       providers = providers.filter((x) => x.id !== item.id);
-      toast(e?.message || String(e), "err");
+      toast(errMsg(e), "err");
     }
   });
 }
+
 
 // boot
 (async () => {
@@ -1972,6 +2357,8 @@ function openAddModal() {
   await loadSystemInfo();
   await loadProviders();
   await refreshProxyStatus();
+  await loadUsageStats();
+  await loadPackageStatuses();
   booting = false;
   render();
   if (page === "configs") {
@@ -1979,5 +2366,8 @@ function openAddModal() {
   }
   if (page === "proxy") {
     // already refreshed
+  }
+  if (page === "usage") {
+    // already loaded
   }
 })();
