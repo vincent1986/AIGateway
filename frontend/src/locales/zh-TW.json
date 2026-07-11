@@ -157,7 +157,7 @@
   "configs.desc": "卡片式工具接入（{platform}）：一鍵接管 AIGateway 統一入口，模型由「模型管理」調度。",
   "apps.takeover": "一鍵接管",
   "apps.rollback": "解除安裝/還原",
-  "apps.takeoverHint": "寫入 base_url 指向本地网关，终端无需再改設定",
+  "apps.takeoverHint": "一鍵接管後 model 固定為 aiSwitchModel；切換真實模型請到「模型管理」，不改寫設定檔。",
   "apps.takenOver": "已接管",
   "models.title": "模型管理",
   "models.desc": "虚拟模型组：多廠家横向聚合、優先級队列与額度狀態。网关按此顺序 Failover。",

@@ -157,7 +157,7 @@
   "configs.desc": "Tool cards on {platform}: one-click takeover of AIゲートウェイ; routing lives under モデル.",
   "apps.takeover": "ワンクリック接続",
   "apps.rollback": "アンインストール / 復元",
-  "apps.takeoverHint": "Write base_url to local gateway — no more config edits in the terminal",
+  "apps.takeoverHint": "接管後、model は aiSwitchModel 固定。実モデルの切替は「モデル管理」で（設定ファイルは書き換えません）。",
   "apps.takenOver": "Managed",
   "models.title": "モデル管理",
   "models.desc": "仮想モデルグループ：複数プロバイダー集約、優先度、ステータス。ゲートウェイはこの順でフェイルオーバー。",

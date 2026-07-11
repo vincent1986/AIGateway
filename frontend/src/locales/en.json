@@ -157,7 +157,7 @@
   "configs.desc": "Tool cards on {platform}: one-click takeover of AIGateway; routing lives under Models.",
   "apps.takeover": "Take over",
   "apps.rollback": "Uninstall / restore",
-  "apps.takeoverHint": "Write base_url to local gateway — no more config edits in the terminal",
+  "apps.takeoverHint": "After takeover, tools pin model aiSwitchModel. Switch real models in Model Management — no further config edits.",
   "apps.takenOver": "Managed",
   "models.title": "Models",
   "models.desc": "Virtual model groups: multi-provider aggregation, priority queue, and status. Gateway failovers in this order.",

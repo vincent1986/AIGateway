@@ -95,9 +95,11 @@ func (a *App) ApplyToolModel(req ModelApplyRequest) (ToolConfigStatus, error) {
 			apiKey = loadProviderSecret(providerID)
 		}
 		envVar := providerEnvVarName(providerID, displayName)
-		// Auto proxy: if vendor wants proxy, ensure proxy is running then use local base.
+		// Auto proxy: if vendor wants proxy, pin virtual model + aigateway provider.
+		// Real model is bound via SetActiveGatewayModel — config keeps aiSwitchModel.
 		writeBase := baseURL
-		if providerIDWantsProxy(providerID, displayName, baseURL) {
+		viaProxy := providerIDWantsProxy(providerID, displayName, baseURL)
+		if viaProxy {
 			if a.proxy == nil {
 				a.proxy = newProxyServer()
 			}
@@ -124,19 +126,25 @@ func (a *App) ApplyToolModel(req ModelApplyRequest) (ToolConfigStatus, error) {
 			}
 			envVar = providerEnvVarName(providerID, displayName)
 		}
-		next = applyCodexModelSwitch(content, model, providerID, displayName, writeBase, apiKey)
-		next = removeTomlProviderBlock(next, "codex_proxy")
-		// 1) 全局系统环境变量: 厂家名称_api_key = api_key
-		// 2) config.toml env_key = "厂家名称_api_key"
-		// 3) 写入 shell / launchctl / setx 保证生效
-		if apiKey != "" {
-			if err := setSystemEnvVar(envVar, apiKey); err != nil {
-				// still continue — config was written; surface warning in message
-				autoBakMsg += "；环境变量写入警告: " + err.Error()
-			} else {
-				autoBakMsg += "；已设置系统环境变量 " + envVar
+		if viaProxy && writeBase != "" && isLocalProxyURL(writeBase) {
+			// Bind real model in gateway; write only virtual id into config.toml
+			_ = persistActiveGatewayModel(model)
+			const localKey = "aigateway"
+			next = applyCodexModelSwitch(content, gatewayVirtualModel, gatewayProviderID, "AIGateway", writeBase, localKey)
+			next = removeProviderField(next, gatewayProviderID, "env_key")
+			next = setProviderField(next, gatewayProviderID, "api_key", localKey)
+			autoBakMsg += "；model=" + gatewayVirtualModel + " → " + model + "（仅代理热切换）"
+		} else {
+			next = applyCodexModelSwitch(content, model, providerID, displayName, writeBase, apiKey)
+			if apiKey != "" {
+				if err := setSystemEnvVar(envVar, apiKey); err != nil {
+					autoBakMsg += "；环境变量写入警告: " + err.Error()
+				} else {
+					autoBakMsg += "；已设置系统环境变量 " + envVar
+				}
 			}
 		}
+		next = removeTomlProviderBlock(next, "codex_proxy")
 		if writeBase != "" && isLocalProxyURL(writeBase) {
 			autoBakMsg += "；base_url→本地代理"
 		}
@@ -164,9 +172,10 @@ func (a *App) ApplyToolModel(req ModelApplyRequest) (ToolConfigStatus, error) {
 			}
 			model = main // reflect normalized id in status message
 		} else {
-			// Prefer local gateway when vendor wants proxy
+			// Prefer local gateway when vendor wants proxy → pin virtual model
 			writeBase := baseURL
-			if providerIDWantsProxy(providerID, displayName, baseURL) {
+			viaProxy := providerIDWantsProxy(providerID, displayName, baseURL) || baseURL == "" || isLocalProxyURL(baseURL)
+			if viaProxy {
 				if a.proxy == nil {
 					a.proxy = newProxyServer()
 				}
@@ -180,9 +189,19 @@ func (a *App) ApplyToolModel(req ModelApplyRequest) (ToolConfigStatus, error) {
 					}
 				}
 			}
-			next, err = applyClaudeModelSwitch(content, model, writeBase, apiKey, providerID)
-			if err != nil {
-				return ToolConfigStatus{}, err
+			if viaProxy && writeBase != "" && isLocalProxyURL(writeBase) {
+				_ = persistActiveGatewayModel(model)
+				// Config always holds aiSwitchModel; real model is gateway-bound
+				next, err = applyClaudeModelSwitch(content, gatewayVirtualModel, writeBase, apiKey, "aigateway")
+				if err != nil {
+					return ToolConfigStatus{}, err
+				}
+				autoBakMsg += "；model=" + gatewayVirtualModel + " → " + model + "（仅代理热切换）"
+			} else {
+				next, err = applyClaudeModelSwitch(content, model, writeBase, apiKey, providerID)
+				if err != nil {
+					return ToolConfigStatus{}, err
+				}
 			}
 			// Claude: also set system env for third-party gateways
 			if apiKey != "" {
@@ -194,7 +213,7 @@ func (a *App) ApplyToolModel(req ModelApplyRequest) (ToolConfigStatus, error) {
 			}
 		}
 	case ToolOpenClaw:
-		// Official: models.providers.aigateway + agents.defaults.model.primary
+		// Official: models.providers.aigateway + agents.defaults.model.primary = aigateway/aiSwitchModel
 		writeBase := baseURL
 		if writeBase == "" || providerIDWantsProxy(providerID, displayName, baseURL) {
 			if a.proxy == nil {
@@ -213,11 +232,12 @@ func (a *App) ApplyToolModel(req ModelApplyRequest) (ToolConfigStatus, error) {
 		if apiKey == "" {
 			apiKey = "aigateway"
 		}
-		next, err = applyOpenClawModelSwitch(content, model, writeBase, apiKey)
+		_ = persistActiveGatewayModel(model)
+		next, err = applyOpenClawModelSwitch(content, gatewayVirtualModel, writeBase, apiKey)
 		if err != nil {
 			return ToolConfigStatus{}, err
 		}
-		autoBakMsg += "；OpenClaw primary → aigateway/" + model
+		autoBakMsg += "；OpenClaw primary → aigateway/" + gatewayVirtualModel + " → " + model
 	case ToolHarness:
 		writeBase := baseURL
 		if writeBase == "" || providerIDWantsProxy(providerID, displayName, baseURL) {
@@ -234,11 +254,13 @@ func (a *App) ApplyToolModel(req ModelApplyRequest) (ToolConfigStatus, error) {
 		if apiKey == "" {
 			apiKey = "aigateway"
 		}
+		_ = persistActiveGatewayModel(model)
 		isJSON := strings.HasSuffix(strings.ToLower(path), ".json")
-		next, err = applyHarnessModelSwitch(content, model, writeBase, apiKey, isJSON)
+		next, err = applyHarnessModelSwitch(content, gatewayVirtualModel, writeBase, apiKey, isJSON)
 		if err != nil {
 			return ToolConfigStatus{}, err
 		}
+		autoBakMsg += "；Harness model=" + gatewayVirtualModel + " → " + model
 	}
 
 	next = preserveLineEndings(content, next)

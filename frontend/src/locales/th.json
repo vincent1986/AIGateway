@@ -157,7 +157,7 @@
   "configs.desc": "Tool cards on {platform}: one-click takeover of AIเกตเวย์; routing lives under โมเดล.",
   "apps.takeover": "เชื่อมต่อคลิกเดียว",
   "apps.rollback": "ถอน / กู้คืน",
-  "apps.takeoverHint": "Write base_url to local gateway — no more config edits in the terminal",
+  "apps.takeoverHint": "หลัง takeover model จะเป็น aiSwitchModel เปลี่ยนโมเดลจริงที่หน้า Model Management โดยไม่แก้ไฟล์ config",
   "apps.takenOver": "Managed",
   "models.title": "จัดการโมเดล",
   "models.desc": "กลุ่มโมเดลเสมือน: รวมหลายผู้ให้บริการ ลำดับความสำคัญ สถานะ เกตเวย์ failover ตามลำดับนี้",

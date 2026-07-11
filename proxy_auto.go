@@ -115,12 +115,25 @@ func (a *App) syncCodexProviderBases(list []Provider) (string, error) {
 		}
 	}
 
+	// When any vendor uses the local gateway: pin model_provider + model to the
+	// stable virtual id so tools always request aiSwitchModel; real routing is
+	// decided inside the proxy (SetActiveGatewayModel / model groups).
+	if nProxy > 0 && proxyRunning && localBase != "" {
+		const localKey = "aigateway"
+		content = upsertCodexModelProvider(content, gatewayProviderID, "AIGateway", localBase, localKey)
+		content = setProviderField(content, gatewayProviderID, "base_url", localBase)
+		content = setProviderField(content, gatewayProviderID, "api_key", localKey)
+		content = removeProviderField(content, gatewayProviderID, "env_key")
+		content = setTomlTopLevelString(content, "model_provider", gatewayProviderID)
+		content = setTomlTopLevelString(content, "model", gatewayVirtualModel)
+	}
+
 	content = stripAllWireAPI(content)
 	content = preserveLineEndings(string(raw), content)
 	if err := writeFileAtomic(path, content); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("已同步 Codex：%d 个走代理，%d 个直连", nProxy, nDirect), nil
+	return fmt.Sprintf("已同步 Codex：%d 个走代理，%d 个直连（代理模式 model=%s）", nProxy, nDirect, gatewayVirtualModel), nil
 }
 
 // stripAllWireAPI removes deprecated wire_api lines from config.toml.

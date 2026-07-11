@@ -811,38 +811,7 @@ function renderAppCard(st) {
   const kind = st.kind;
   const busy = configsBusy === kind;
   const ok = !!st.found && !!st.exists;
-  const virt = activeGateway.virtualModel || "aiSwitchModel";
-  const active = activeGateway.activeModel || "";
-  const modelLine = `<div class="hint" style="margin-top:6px">
-      ${t("apps.proxyModel", { virtual: virt, active: active || t("common.none") })}
-      ${st.model ? ` · ${t("configs.pathLabel")}: <code>${escapeHtml(st.model)}</code>` : ""}
-    </div>`;
-  // Hot-switch via proxy only (SetActiveGatewayModel) — never rewrite tool configs
-  const choices = modelChoicesFor(kind);
-  const selectedModel = pendingModel[kind] || active || "";
-  const modelApply =
-    choices.length > 0
-      ? `<div class="field" style="margin-top:10px">
-          <label style="font-size:12px;color:var(--text-secondary)">${t("configs.switchModel")}</label>
-          <p class="hint">${t("apps.hotSwitchHint", { virtual: virt })}</p>
-          <div class="actions" style="margin-top:4px;flex-wrap:wrap">
-            <select class="select" data-act="gateway-model-select" data-kind="${kind}" style="min-width:160px;flex:1">
-              <option value="">${t("common.none")}</option>
-              ${choices
-                .map(
-                  (c) =>
-                    `<option value="${escapeAttr(c.id)}" ${
-                      c.id === selectedModel ? "selected" : ""
-                    }>${escapeHtml(c.group ? c.group + " / " : "")}${escapeHtml(c.name || c.id)}</option>`
-                )
-                .join("")}
-            </select>
-            <button class="btn btn-sm btn-primary" data-act="gateway-model-apply" data-kind="${kind}" ${
-              busy || !selectedModel ? "disabled" : ""
-            }>${t("models.setActive")}</button>
-          </div>
-        </div>`
-      : "";
+  // App management: takeover only. Model switch lives in 模型管理 (aiSwitchModel hot-route).
   return `
     <section class="config-card app-card" data-kind="${escapeAttr(kind)}">
       <div class="config-card-head">
@@ -857,7 +826,6 @@ function renderAppCard(st) {
           <label style="font-size:12px;color:var(--text-secondary);font-weight:500">${t("configs.pathLabel")}</label>
           <div class="path-value ${ok ? "" : "missing"}">${escapeHtml(st.path || t("common.dash"))}</div>
         </div>
-        ${modelLine}
         <div class="hint">${t("apps.takeoverHint")}</div>
         <div class="actions" style="margin-top:10px;flex-wrap:wrap">
           <button class="btn btn-primary" data-act="takeover" data-kind="${kind}" ${busy ? "disabled" : ""}>
@@ -870,7 +838,6 @@ function renderAppCard(st) {
           <button class="btn btn-sm" data-act="pick" data-kind="${kind}" ${busy ? "disabled" : ""}>${t("configs.pick")}</button>
           <button class="btn btn-sm" data-act="reveal" data-kind="${kind}" ${!st.path ? "disabled" : ""}>${escapeHtml(revealLabelForOs(systemInfo.os))}</button>
         </div>
-        ${modelApply}
         <div class="config-msg ${ok ? "ok" : st.message ? "warn" : ""}">${escapeHtml(tb(st.message || ""))}</div>
         ${
           configPreview[kind]
@@ -2232,59 +2199,6 @@ function bindConfigEvents() {
     });
   });
 
-  // Legacy apply-model (if any) → also hot-switch only
-  document.querySelectorAll("[data-act='apply-model']").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const kind = btn.dataset.kind;
-      const sel = document.querySelector(`[data-act='model-select'][data-kind='${kind}']`);
-      const model =
-        document.querySelector(`[data-act='model-input'][data-kind='${kind}']`)?.value?.trim() ||
-        sel?.value?.trim() ||
-        pendingModel[kind] ||
-        "";
-      if (!model) return toast(t("toast.selectModel"), "err");
-      configsBusy = kind;
-      render();
-      try {
-        await setGatewayActiveModel(model);
-        toast(t("toast.hotSwitched", { model, virtual: activeGateway.virtualModel || "aiSwitchModel" }));
-      } catch (e) {
-        toast(errMsg(e), "err");
-      } finally {
-        configsBusy = "";
-        render();
-      }
-    });
-  });
-
-  // App cards: select + apply gateway active model (proxy only)
-  document.querySelectorAll("[data-act='gateway-model-select']").forEach((sel) => {
-    sel.addEventListener("change", () => {
-      const kind = sel.dataset.kind;
-      pendingModel[kind] = sel.value;
-      const applyBtn = document.querySelector(`[data-act='gateway-model-apply'][data-kind='${kind}']`);
-      if (applyBtn) applyBtn.disabled = !sel.value;
-    });
-  });
-  document.querySelectorAll("[data-act='gateway-model-apply']").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const kind = btn.dataset.kind;
-      const sel = document.querySelector(`[data-act='gateway-model-select'][data-kind='${kind}']`);
-      const model = sel?.value?.trim() || pendingModel[kind] || "";
-      if (!model) return toast(t("toast.selectModel"), "err");
-      configsBusy = kind;
-      render();
-      try {
-        await setGatewayActiveModel(model);
-        toast(t("toast.hotSwitched", { model, virtual: activeGateway.virtualModel || "aiSwitchModel" }));
-      } catch (e) {
-        toast(errMsg(e), "err");
-      } finally {
-        configsBusy = "";
-        render();
-      }
-    });
-  });
 }
 
 /** Find app vendor that owns this model id for baseUrl/apiKey injection */

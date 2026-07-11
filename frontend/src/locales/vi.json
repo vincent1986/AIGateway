@@ -157,7 +157,7 @@
   "configs.desc": "Tool cards on {platform}: one-click takeover of AICổng; routing lives under Mô hình.",
   "apps.takeover": "Kết nối một chạm",
   "apps.rollback": "Gỡ / khôi phục",
-  "apps.takeoverHint": "Write base_url to local gateway — no more config edits in the terminal",
+  "apps.takeoverHint": "Sau takeover, model cố định aiSwitchModel. Đổi model thật ở Quản lý mô hình — không sửa file cấu hình.",
   "apps.takenOver": "Managed",
   "models.title": "Quản lý mô hình",
   "models.desc": "Nhóm mô hình ảo: gộp nhiều NCC, ưu tiên, trạng thái. Gateway failover theo thứ tự này.",
