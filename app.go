@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 )
 
 // App struct
@@ -21,6 +22,11 @@ func NewApp() *App {
 // so we can call the runtime methods
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	// open SQLite early (migrate JSON if needed)
+	if _, err := openDB(); err != nil {
+		// non-fatal: proxy/providers fall back to JSON
+		fmt.Printf("aigateway: openDB: %v\n", err)
+	}
 	// auto-start OpenAI proxy if configured
 	if a.proxy != nil {
 		cfg := a.proxy.getConfig()
@@ -37,4 +43,5 @@ func (a *App) shutdown(ctx context.Context) {
 	if a.proxy != nil {
 		_ = a.proxy.stop()
 	}
+	closeDB()
 }

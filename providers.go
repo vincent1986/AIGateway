@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -570,42 +569,4 @@ func parseModelsResponse(body []byte) ([]FetchModelItem, error) {
 	return nil, fmt.Errorf("无法解析模型列表响应")
 }
 
-func loadProvidersFromDisk() ([]Provider, error) {
-	path := providersStorePath()
-	b, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return []Provider{}, nil
-		}
-		return nil, err
-	}
-	var f providersFile
-	if err := json.Unmarshal(b, &f); err != nil {
-		// try raw array
-		var list []Provider
-		if err2 := json.Unmarshal(b, &list); err2 != nil {
-			return nil, fmt.Errorf("解析 providers.json 失败: %w", err)
-		}
-		return list, nil
-	}
-	if f.Providers == nil {
-		return []Provider{}, nil
-	}
-	return f.Providers, nil
-}
-
-func saveProvidersToDisk(list []Provider) error {
-	if err := os.MkdirAll(managerRoot(), 0o755); err != nil {
-		return err
-	}
-	f := providersFile{
-		Version:   1,
-		UpdatedAt: time.Now().Format(time.RFC3339),
-		Providers: list,
-	}
-	b, err := json.MarshalIndent(f, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(providersStorePath(), b, 0o600)
-}
+// loadProvidersFromDisk / saveProvidersToDisk live in db_providers.go (SQLite + JSON mirror).

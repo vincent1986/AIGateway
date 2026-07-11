@@ -70,6 +70,10 @@ export function GetUsageStats() {
   return window['go']['main']['App']['GetUsageStats']();
 }
 
+export function ListModelGroups() {
+  return window['go']['main']['App']['ListModelGroups']();
+}
+
 export function ListProviders() {
   return window['go']['main']['App']['ListProviders']();
 }
@@ -100,6 +104,14 @@ export function SaveProviders(arg1) {
 
 export function SaveProxyConfig(arg1) {
   return window['go']['main']['App']['SaveProxyConfig'](arg1);
+}
+
+export function SetModelGroupRouteEnabled(arg1, arg2) {
+  return window['go']['main']['App']['SetModelGroupRouteEnabled'](arg1, arg2);
+}
+
+export function SetModelGroupRoutePriority(arg1, arg2) {
+  return window['go']['main']['App']['SetModelGroupRoutePriority'](arg1, arg2);
 }
 
 export function SetToolConfigPath(arg1, arg2) {

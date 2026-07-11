@@ -385,7 +385,7 @@ func (p *proxyServer) handleOpenAIProxy(w http.ResponseWriter, r *http.Request) 
 }
 
 // forwardOpenAI accepts standard OpenAI request and forwards to the provider
-// that owns the model, always using OpenAI-compatible paths on the upstream.
+// that owns the model. V2: tries priority-ordered routes with failover on 429/quota.
 func (p *proxyServer) forwardOpenAI(w http.ResponseWriter, r *http.Request, openAIPath string) {
 	if r.Method != http.MethodPost && r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -404,12 +404,16 @@ func (p *proxyServer) forwardOpenAI(w http.ResponseWriter, r *http.Request, open
 	_ = r.Body.Close()
 
 	model := extractModel(body, r)
-	prov, routeErr := resolveProviderForModel(model)
-	if routeErr != nil {
-		p.logf("路由失败 model=%q: %v", model, routeErr)
+	cands, routeErr := resolveRoutesForModel(model)
+	if routeErr != nil || len(cands) == 0 {
+		msg := "model not routed"
+		if routeErr != nil {
+			msg = routeErr.Error()
+		}
+		p.logf("路由失败 model=%q: %s", model, msg)
 		writeJSON(w, 400, map[string]any{
 			"error": map[string]any{
-				"message": routeErr.Error(),
+				"message": msg,
 				"type":    "invalid_request_error",
 				"code":    "model_not_routed",
 			},
@@ -417,103 +421,165 @@ func (p *proxyServer) forwardOpenAI(w http.ResponseWriter, r *http.Request, open
 		return
 	}
 
-	upstreamURL := joinOpenAIURL(prov.BaseURL, openAIPath)
-	// append query from original
-	if r.URL.RawQuery != "" {
-		if strings.Contains(upstreamURL, "?") {
-			upstreamURL += "&" + r.URL.RawQuery
-		} else {
-			upstreamURL += "?" + r.URL.RawQuery
-		}
-	}
-
 	// Codex / newer OpenAI clients send role=developer; most vendors reject it.
+	baseBody := body
 	if openAIPath == "chat/completions" || strings.HasPrefix(openAIPath, "chat/completions") {
-		body = normalizeUpstreamChatBody(body)
-		// request usage on last stream chunk for token stats
-		if isStreamRequest(body) {
-			body = ensureStreamUsage(body)
+		baseBody = normalizeUpstreamChatBody(baseBody)
+		if isStreamRequest(baseBody) {
+			baseBody = ensureStreamUsage(baseBody)
 		}
 	}
+	stream := isStreamRequest(baseBody)
 
-	stream := isStreamRequest(body)
-	p.logf("%s %s → %s model=%s provider=%s stream=%v",
-		r.Method, openAIPath, prov.Name, model, prov.Name, stream)
+	var lastStatus int
+	var lastBody []byte
+	var lastErr error
 
-	req, err := http.NewRequestWithContext(r.Context(), r.Method, upstreamURL, bytes.NewReader(body))
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-	// Standard OpenAI auth to upstream
-	req.Header.Set("Content-Type", "application/json")
-	key := strings.TrimSpace(prov.APIKey)
-	if key == "" && isLocalOrNoAuthProvider(prov) {
-		key = "ollama"
-	}
-	if key != "" {
-		req.Header.Set("Authorization", "Bearer "+key)
-		req.Header.Set("api-key", key)
-	}
-	// Pass through useful headers
-	if v := r.Header.Get("Accept"); v != "" {
-		req.Header.Set("Accept", v)
-	}
-	if stream {
-		req.Header.Set("Accept", "text/event-stream")
-	}
+	for i, cand := range cands {
+		prov := cand.Provider
+		reqBody := rewriteRequestModel(baseBody, cand.UpstreamModel)
 
-	client := p.client
-	if !stream {
-		client = &http.Client{Timeout: 120 * time.Second, Transport: p.client.Transport}
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		p.logf("上游错误: %v", err)
-		writeJSON(w, 502, map[string]any{
-			"error": map[string]any{"message": "upstream: " + err.Error(), "type": "proxy_error"},
-		})
-		return
-	}
-	defer resp.Body.Close()
+		upstreamURL := joinOpenAIURL(prov.BaseURL, openAIPath)
+		if r.URL.RawQuery != "" {
+			if strings.Contains(upstreamURL, "?") {
+				upstreamURL += "&" + r.URL.RawQuery
+			} else {
+				upstreamURL += "?" + r.URL.RawQuery
+			}
+		}
 
-	// copy response headers (filter hop-by-hop)
-	for k, vv := range resp.Header {
-		lk := strings.ToLower(k)
-		if lk == "connection" || lk == "keep-alive" || lk == "transfer-encoding" || lk == "proxy-authenticate" || lk == "proxy-authorization" || lk == "te" || lk == "trailers" || lk == "upgrade" {
+		p.logf("%s %s → %s model=%s up=%s try=%d/%d stream=%v",
+			r.Method, openAIPath, prov.Name, model, cand.UpstreamModel, i+1, len(cands), stream)
+
+		req, err := http.NewRequestWithContext(r.Context(), r.Method, upstreamURL, bytes.NewReader(reqBody))
+		if err != nil {
+			lastErr = err
 			continue
 		}
-		for _, v := range vv {
-			w.Header().Add(k, v)
+		req.Header.Set("Content-Type", "application/json")
+		key := strings.TrimSpace(prov.APIKey)
+		if key == "" && isLocalOrNoAuthProvider(prov) {
+			key = "ollama"
 		}
-	}
-	w.WriteHeader(resp.StatusCode)
+		if key != "" {
+			req.Header.Set("Authorization", "Bearer "+key)
+			req.Header.Set("api-key", key)
+		}
+		if v := r.Header.Get("Accept"); v != "" {
+			req.Header.Set("Accept", v)
+		}
+		if stream {
+			req.Header.Set("Accept", "text/event-stream")
+		}
 
-	if stream {
-		flusher, ok := w.(http.Flusher)
-		var acc bytes.Buffer
-		buf := make([]byte, 4096)
-		for {
-			n, readErr := resp.Body.Read(buf)
-			if n > 0 {
-				_, _ = w.Write(buf[:n])
-				if acc.Len() < 2<<20 { // cap capture for usage parse
-					_, _ = acc.Write(buf[:n])
-				}
-				if ok {
-					flusher.Flush()
-				}
+		client := p.client
+		if !stream {
+			client = &http.Client{Timeout: 120 * time.Second, Transport: p.client.Transport}
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			p.logf("上游错误 %s: %v", prov.Name, err)
+			lastErr = err
+			// network error → try next within ~300ms budget
+			if i+1 < len(cands) {
+				time.Sleep(50 * time.Millisecond)
 			}
-			if readErr != nil {
+			continue
+		}
+
+		// Stream: once headers sent we cannot failover transparently without buffering.
+		// For stream failures that return quickly with error status, failover before writing.
+		if stream {
+			if isFailoverStatus(resp.StatusCode) {
+				b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+				_ = resp.Body.Close()
+				lastStatus = resp.StatusCode
+				lastBody = b
+				p.logf("熔断切换 status=%d provider=%s → next", resp.StatusCode, prov.Name)
+				if i+1 < len(cands) {
+					time.Sleep(50 * time.Millisecond)
+					continue
+				}
 				break
 			}
+			// success stream path
+			for k, vv := range resp.Header {
+				lk := strings.ToLower(k)
+				if lk == "connection" || lk == "keep-alive" || lk == "transfer-encoding" || lk == "proxy-authenticate" || lk == "proxy-authorization" || lk == "te" || lk == "trailers" || lk == "upgrade" {
+					continue
+				}
+				for _, v := range vv {
+					w.Header().Add(k, v)
+				}
+			}
+			w.WriteHeader(resp.StatusCode)
+			flusher, ok := w.(http.Flusher)
+			var acc bytes.Buffer
+			buf := make([]byte, 4096)
+			for {
+				n, readErr := resp.Body.Read(buf)
+				if n > 0 {
+					_, _ = w.Write(buf[:n])
+					if acc.Len() < 2<<20 {
+						_, _ = acc.Write(buf[:n])
+					}
+					if ok {
+						flusher.Flush()
+					}
+				}
+				if readErr != nil {
+					break
+				}
+			}
+			_ = resp.Body.Close()
+			recordUsageFromSSE(acc.Bytes(), prov.Name, model, openAIPath, resp.StatusCode)
+			return
 		}
-		recordUsageFromSSE(acc.Bytes(), prov.Name, model, openAIPath, resp.StatusCode)
+
+		// Non-stream
+		upBody, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
+		_ = resp.Body.Close()
+		lastStatus = resp.StatusCode
+		lastBody = upBody
+
+		if isFailoverStatus(resp.StatusCode) || (resp.StatusCode >= 400 && isFailoverBody(upBody)) {
+			p.logf("熔断切换 status=%d provider=%s body_hint=%v", resp.StatusCode, prov.Name, isFailoverBody(upBody))
+			if i+1 < len(cands) {
+				time.Sleep(50 * time.Millisecond)
+				continue
+			}
+			break
+		}
+
+		// success
+		for k, vv := range resp.Header {
+			lk := strings.ToLower(k)
+			if lk == "connection" || lk == "keep-alive" || lk == "transfer-encoding" || lk == "proxy-authenticate" || lk == "proxy-authorization" || lk == "te" || lk == "trailers" || lk == "upgrade" {
+				continue
+			}
+			for _, v := range vv {
+				w.Header().Add(k, v)
+			}
+		}
+		w.WriteHeader(resp.StatusCode)
+		recordUsageFromPayload(upBody, prov.Name, model, openAIPath, resp.StatusCode)
+		_, _ = w.Write(upBody)
 		return
 	}
-	upBody, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
-	recordUsageFromPayload(upBody, prov.Name, model, openAIPath, resp.StatusCode)
-	_, _ = w.Write(upBody)
+
+	// all candidates failed
+	p.logf("全部渠道耗尽 model=%q lastStatus=%d lastErr=%v", model, lastStatus, lastErr)
+	if lastStatus > 0 && len(lastBody) > 0 && lastStatus < 500 {
+		// return last upstream error if client-ish, else exhausted
+		for _, h := range []string{"Content-Type"} {
+			_ = h
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(lastStatus)
+		_, _ = w.Write(lastBody)
+		return
+	}
+	writeJSON(w, 429, exhaustedErrorJSON(model))
 }
 
 // ensureStreamUsage adds stream_options.include_usage for chat streams.
@@ -576,82 +642,7 @@ func joinOpenAIURL(baseURL, openAIPath string) string {
 	return base + "/v1/" + path
 }
 
-// resolveProviderForModel finds which vendor owns the model id.
-func resolveProviderForModel(model string) (Provider, error) {
-	model = strings.TrimSpace(model)
-	if model == "" {
-		return Provider{}, fmt.Errorf("请求中缺少 model 字段")
-	}
-	providers, err := loadProvidersFromDisk()
-	if err != nil {
-		return Provider{}, err
-	}
-	if len(providers) == 0 {
-		return Provider{}, fmt.Errorf("未配置任何厂家，请先在「厂家模型」中添加")
-	}
-
-	// exact match on model id (prefer enabled)
-	var fallback *Provider
-	for i := range providers {
-		p := &providers[i]
-		for _, m := range p.Models {
-			if m.ID != model {
-				continue
-			}
-			if p.BaseURL == "" || !providerAPIKeyOK(*p) {
-				return Provider{}, fmt.Errorf("厂家 %s 未配置完整 API/Key", p.Name)
-			}
-			if m.Enabled {
-				return *p, nil
-			}
-			if fallback == nil {
-				cp := *p
-				fallback = &cp
-			}
-		}
-	}
-	if fallback != nil {
-		return *fallback, nil
-	}
-
-	// prefix routing: "deepseek/deepseek-chat" or "deepseek:chat" or "ollama/llama3"
-	if i := strings.IndexAny(model, "/:"); i > 0 {
-		prefix := strings.ToLower(model[:i])
-		for _, p := range providers {
-			if strings.ToLower(slugify(p.Name)) == prefix || strings.ToLower(p.ID) == prefix {
-				if p.BaseURL == "" || !providerAPIKeyOK(p) {
-					return Provider{}, fmt.Errorf("厂家 %s 未配置完整 API/Key", p.Name)
-				}
-				return p, nil
-			}
-		}
-	}
-
-	// single provider fallback
-	if len(providers) == 1 {
-		p := providers[0]
-		if p.BaseURL == "" || !providerAPIKeyOK(p) {
-			return Provider{}, fmt.Errorf("厂家 %s 未配置完整 API/Key", p.Name)
-		}
-		return p, nil
-	}
-
-	// default model of any provider
-	for _, p := range providers {
-		for _, m := range p.Models {
-			if m.IsDefault && m.Enabled && p.BaseURL != "" && p.APIKey != "" {
-				// model id not found — still error with hint
-				break
-			}
-		}
-	}
-
-	names := make([]string, 0, len(providers))
-	for _, p := range providers {
-		names = append(names, p.Name)
-	}
-	return Provider{}, fmt.Errorf("未找到模型 %q 所属厂家（已配置: %s）。请先在厂家中获取并启用该模型", model, strings.Join(names, ", "))
-}
+// resolveProviderForModel is implemented in route.go (V2 multi-route + SQLite).
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
