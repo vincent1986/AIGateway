@@ -357,6 +357,6 @@
   "models.setActive": "Set as gateway default",
   "models.isActive": "Active default",
   "apps.proxyModel": "Virtual {virtual} → {active}",
-  "apps.hotSwitchHint": "Switch routes {virtual} via the proxy without rewriting tool configs.",
+  "apps.hotSwitchHint": "Switch real upstream model (proxy hot-switch, no config write)",
   "toast.hotSwitched": "Hot-switched: {virtual} → {model} (config files unchanged)"
 }

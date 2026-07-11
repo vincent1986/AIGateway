@@ -357,6 +357,6 @@
   "models.setActive": "设为网关默认",
   "models.isActive": "当前默认",
   "apps.proxyModel": "虚拟模型 {virtual} → 当前 {active}",
-  "apps.hotSwitchHint": "切换后代理将 {virtual} 路由到所选模型，无需重写工具配置。",
+  "apps.hotSwitchHint": "切换真实上游模型（代理热切换，不写配置文件）",
   "toast.hotSwitched": "已热切换：{virtual} → {model}（未修改配置文件）"
 }

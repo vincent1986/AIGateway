@@ -357,6 +357,6 @@
   "models.setActive": "設為閘道預設",
   "models.isActive": "目前預設",
   "apps.proxyModel": "虛擬模型 {virtual} → 目前 {active}",
-  "apps.hotSwitchHint": "切換後代理將 {virtual} 路由到所選模型，無需重寫工具設定。",
+  "apps.hotSwitchHint": "切換真實上游模型（代理熱切換，不寫設定檔）",
   "toast.hotSwitched": "已熱切換：{virtual} → {model}（未修改設定檔）"
 }

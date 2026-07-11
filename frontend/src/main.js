@@ -382,25 +382,39 @@ async function loadSystemInfo() {
   // reveal label is localized in UI via revealLabelForOs(os)
 }
 
-/** enabled models from all providers + config candidates */
+/** Virtual gateway model ids — never show in model pickers (tools pin these in config). */
+function isVirtualGatewayModelId(id) {
+  const m = String(id || "").trim().toLowerCase();
+  if (!m) return false;
+  if (m === "aiswitchmodel" || m === "ai-switch-model" || m === "ai_switch_model") return true;
+  if (m === "aigateway" || m === "default" || m === "gateway" || m === "codex-proxy") return true;
+  if (m.startsWith("aigateway/")) {
+    const rest = m.slice("aigateway/".length);
+    return !rest || rest === "default" || rest === "aiswitchmodel" || rest === "ai-switch-model";
+  }
+  return false;
+}
+
+/** enabled models from all providers + config candidates (excludes aiSwitchModel) */
 function modelChoicesFor(kind) {
   /** @type {{id:string,name:string,provider:string,group:string}[]} */
   const list = [];
   const seen = new Set();
   const st = toolConfigs[kind];
   for (const c of st?.candidates || []) {
-    if (!c?.id || seen.has(c.id)) continue;
+    if (!c?.id || seen.has(c.id) || isVirtualGatewayModelId(c.id)) continue;
     seen.add(c.id);
     list.push({ id: c.id, name: c.name || c.id, provider: c.provider || "", group: t("configs.groupInFile") });
   }
   for (const p of providers) {
     for (const m of p.models || []) {
-      if (!m.enabled || !m.id || seen.has(m.id)) continue;
+      if (!m.enabled || !m.id || seen.has(m.id) || isVirtualGatewayModelId(m.id)) continue;
       seen.add(m.id);
       list.push({ id: m.id, name: m.name || m.id, provider: "", group: p.name });
     }
   }
-  if (st?.model && !seen.has(st.model)) {
+  // Do not inject current config model if it is the virtual pin (aiSwitchModel)
+  if (st?.model && !seen.has(st.model) && !isVirtualGatewayModelId(st.model)) {
     list.unshift({ id: st.model, name: st.model, provider: st.modelProvider || "", group: t("configs.groupCurrent") });
   }
   return list;
@@ -811,7 +825,41 @@ function renderAppCard(st) {
   const kind = st.kind;
   const busy = configsBusy === kind;
   const ok = !!st.found && !!st.exists;
-  // App management: takeover only. Model switch lives in 模型管理 (aiSwitchModel hot-route).
+  const active = activeGateway.activeModel || "";
+  // Real models only — never list aiSwitchModel (config pin is invisible to users)
+  const choices = modelChoicesFor(kind).filter((c) => !isVirtualGatewayModelId(c.id));
+  const selectedModel =
+    pendingModel[kind] && !isVirtualGatewayModelId(pendingModel[kind])
+      ? pendingModel[kind]
+      : active && !isVirtualGatewayModelId(active)
+        ? active
+        : "";
+  const modelSwitch = `
+        <div class="field" style="margin-top:12px">
+          <label style="font-size:12px;color:var(--text-secondary)">${t("configs.switchModel")}</label>
+          <p class="hint">${t("apps.hotSwitchHint")}</p>
+          <div class="actions" style="margin-top:4px;flex-wrap:wrap">
+            <select class="select" data-act="gateway-model-select" data-kind="${kind}" style="min-width:160px;flex:1">
+              <option value="">${t("configs.selectModel")}</option>
+              ${choices
+                .map(
+                  (c) =>
+                    `<option value="${escapeAttr(c.id)}" ${c.id === selectedModel ? "selected" : ""}>${escapeHtml(
+                      c.group ? c.group + " / " : ""
+                    )}${escapeHtml(c.name || c.id)}</option>`
+                )
+                .join("")}
+            </select>
+            <button class="btn btn-sm btn-primary" data-act="gateway-model-apply" data-kind="${kind}" ${
+              busy || !selectedModel ? "disabled" : ""
+            }>${t("common.apply")}</button>
+          </div>
+          ${
+            active && !isVirtualGatewayModelId(active)
+              ? `<div class="hint" style="margin-top:6px">${t("common.current")}: <code>${escapeHtml(active)}</code></div>`
+              : ""
+          }
+        </div>`;
   return `
     <section class="config-card app-card" data-kind="${escapeAttr(kind)}">
       <div class="config-card-head">
@@ -838,6 +886,7 @@ function renderAppCard(st) {
           <button class="btn btn-sm" data-act="pick" data-kind="${kind}" ${busy ? "disabled" : ""}>${t("configs.pick")}</button>
           <button class="btn btn-sm" data-act="reveal" data-kind="${kind}" ${!st.path ? "disabled" : ""}>${escapeHtml(revealLabelForOs(systemInfo.os))}</button>
         </div>
+        ${modelSwitch}
         <div class="config-msg ${ok ? "ok" : st.message ? "warn" : ""}">${escapeHtml(tb(st.message || ""))}</div>
         ${
           configPreview[kind]
@@ -2199,6 +2248,42 @@ function bindConfigEvents() {
     });
   });
 
+  // App management: hot-switch gateway active model (proxy only; no config rewrite)
+  document.querySelectorAll("[data-act='gateway-model-select']").forEach((sel) => {
+    sel.addEventListener("change", () => {
+      const kind = sel.dataset.kind;
+      const v = sel.value;
+      if (isVirtualGatewayModelId(v)) {
+        sel.value = "";
+        pendingModel[kind] = "";
+      } else {
+        pendingModel[kind] = v;
+      }
+      const applyBtn = document.querySelector(`[data-act='gateway-model-apply'][data-kind='${kind}']`);
+      if (applyBtn) applyBtn.disabled = !pendingModel[kind];
+    });
+  });
+  document.querySelectorAll("[data-act='gateway-model-apply']").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const kind = btn.dataset.kind;
+      const sel = document.querySelector(`[data-act='gateway-model-select'][data-kind='${kind}']`);
+      let model = (sel?.value || pendingModel[kind] || "").trim();
+      if (!model || isVirtualGatewayModelId(model)) {
+        return toast(t("toast.selectModel"), "err");
+      }
+      configsBusy = kind;
+      render();
+      try {
+        await setGatewayActiveModel(model);
+        toast(t("toast.hotSwitched", { model, virtual: activeGateway.virtualModel || "aiSwitchModel" }));
+      } catch (e) {
+        toast(errMsg(e), "err");
+      } finally {
+        configsBusy = "";
+        render();
+      }
+    });
+  });
 }
 
 /** Find app vendor that owns this model id for baseUrl/apiKey injection */
