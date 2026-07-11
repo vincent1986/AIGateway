@@ -36,6 +36,8 @@ export function GetToolConfig(arg1:string):Promise<main.ToolConfigStatus>;
 
 export function GetUsageStats():Promise<main.UsageStats>;
 
+export function InjectGateway(arg1:string):Promise<main.ToolConfigStatus>;
+
 export function ListModelGroups():Promise<Array<main.ModelGroupView>>;
 
 export function ListProviders():Promise<Array<main.Provider>>;
@@ -49,6 +51,8 @@ export function RestoreCodexOriginalBases():Promise<main.ToolConfigStatus>;
 export function RestoreDefaultConfig(arg1:string):Promise<main.ToolConfigStatus>;
 
 export function RevealConfigPath(arg1:string):Promise<void>;
+
+export function RollbackGateway(arg1:string):Promise<main.ToolConfigStatus>;
 
 export function SaveProviders(arg1:Array<main.Provider>):Promise<void>;
 

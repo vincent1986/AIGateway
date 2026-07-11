@@ -28,6 +28,11 @@ import {
   GetUsageStats,
   ClearUsageStats,
   GetProviderPackageStatuses,
+  ListModelGroups,
+  SetModelGroupRoutePriority,
+  SetModelGroupRouteEnabled,
+  InjectGateway,
+  RollbackGateway,
 } from "../wailsjs/go/main/App";
 
 /** @typedef {{ id: string, name: string, baseUrl: string, apiKey: string, color: string, models: Model[] }} Provider */
@@ -69,10 +74,18 @@ let testing = false;
 let testResult = null;
 let modelQuery = "";
 let booting = true;
-/** @type {'providers'|'configs'|'proxy'|'usage'} */
-let page = ["configs", "proxy", "usage"].includes(localStorage.getItem(PAGE_KEY) || "")
-  ? localStorage.getItem(PAGE_KEY)
-  : "providers";
+/** @type {'providers'|'models'|'apps'|'configs'|'proxy'|'usage'} */
+let page = (() => {
+  const raw = localStorage.getItem(PAGE_KEY) || "";
+  if (raw === "configs") return "apps";
+  if (["models", "apps", "proxy", "usage"].includes(raw)) return raw;
+  return "providers";
+})();
+
+/** @type {any[]} */
+let modelGroups = [];
+let modelsLoading = false;
+let modelsBusy = "";
 
 /** @type {null | { total?: any, byDay?: any[], byModel?: any[], byProvider?: any[], recent?: any[] }} */
 let usageStats = null;
@@ -473,7 +486,8 @@ function render() {
         </div>
         <nav class="nav-tabs">
           <button class="nav-tab ${page === "providers" ? "active" : ""}" data-page="providers">${t("nav.providers")}</button>
-          <button class="nav-tab ${page === "configs" ? "active" : ""}" data-page="configs">${t("nav.configs")}</button>
+          <button class="nav-tab ${page === "models" ? "active" : ""}" data-page="models">${t("nav.models")}</button>
+          <button class="nav-tab ${page === "apps" || page === "configs" ? "active" : ""}" data-page="apps">${t("nav.apps")}</button>
           <button class="nav-tab ${page === "proxy" ? "active" : ""}" data-page="proxy">${t("nav.proxy")}</button>
           <button class="nav-tab ${page === "usage" ? "active" : ""}" data-page="usage">${t("nav.usage")}</button>
         </nav>
@@ -497,17 +511,20 @@ function render() {
     ${
       page === "providers"
         ? renderProvidersPage()
-        : page === "proxy"
-          ? renderProxyPage()
-          : page === "usage"
-            ? renderUsagePage()
-            : renderConfigsPage()
+        : page === "models"
+          ? renderModelsPage()
+          : page === "proxy"
+            ? renderProxyPage()
+            : page === "usage"
+              ? renderUsagePage()
+              : renderConfigsPage()
     }
     <div class="toast-host" id="toast-host"></div>
     <div id="modal-root"></div>
   `;
   bindShellEvents();
   if (page === "providers") bindProviderEvents();
+  else if (page === "models") bindModelsEvents();
   else if (page === "proxy") bindProxyEvents();
   else if (page === "usage") bindUsageEvents();
   else bindConfigEvents();
@@ -705,13 +722,244 @@ function renderConfigsPage() {
             </button>
           </div>
         </div>
-        <div class="config-grid">
-          ${renderToolCard(codex || placeholder("codex", "Codex"))}
-          ${renderToolCard(claude || placeholder("claude", "Claude Code"))}
+        <div class="apps-grid">
+          ${renderAppCard(codex || placeholder("codex", "ChatGPT"))}
+          ${renderAppCard(claude || placeholder("claude", "Claude Code"))}
         </div>
       </div>
     </div>
   `;
+}
+
+function statusTagForTool(st) {
+  if (st.found && st.exists) {
+    const mp = (st.modelProvider || "").toLowerCase();
+    const pathOk = !!(st.path);
+    if (mp.includes("aigateway") || mp.includes("codex_proxy")) {
+      return `<span class="tag ok">${t("apps.takenOver")}</span>`;
+    }
+    return `<span class="tag ok">${t("configs.located")}</span>`;
+  }
+  return `<span class="tag off">${t("configs.notFound")}</span>`;
+}
+
+function renderAppCard(st) {
+  const kind = st.kind;
+  const busy = configsBusy === kind;
+  const ok = !!st.found && !!st.exists;
+  return `
+    <section class="config-card app-card" data-kind="${escapeAttr(kind)}">
+      <div class="config-card-head">
+        <h3>
+          <span class="status-dot ${ok ? "ok" : "fail"}"></span>
+          ${escapeHtml(st.name || kind)}
+        </h3>
+        <div class="meta-row">${statusTagForTool(st)}</div>
+      </div>
+      <div class="config-card-body">
+        <div class="path-box">
+          <label style="font-size:12px;color:var(--text-secondary);font-weight:500">${t("configs.pathLabel")}</label>
+          <div class="path-value ${ok ? "" : "missing"}">${escapeHtml(st.path || t("common.dash"))}</div>
+        </div>
+        <div class="hint">${t("apps.takeoverHint")}</div>
+        <div class="actions" style="margin-top:10px;flex-wrap:wrap">
+          <button class="btn btn-primary" data-act="takeover" data-kind="${kind}" ${busy ? "disabled" : ""}>
+            ${busy ? `<span class="spinner"></span>` : t("apps.takeover")}
+          </button>
+          <button class="btn" data-act="rollback-gw" data-kind="${kind}" ${busy || !st.hasDefaultBackup ? "disabled" : ""}>
+            ${t("apps.rollback")}
+          </button>
+          <button class="btn btn-sm" data-act="scan" data-kind="${kind}" ${busy ? "disabled" : ""}>${t("configs.autoScan")}</button>
+          <button class="btn btn-sm" data-act="pick" data-kind="${kind}" ${busy ? "disabled" : ""}>${t("configs.pick")}</button>
+          <button class="btn btn-sm" data-act="reveal" data-kind="${kind}" ${!st.path ? "disabled" : ""}>${escapeHtml(revealLabelForOs(systemInfo.os))}</button>
+        </div>
+        <div class="config-msg ${ok ? "ok" : st.message ? "warn" : ""}">${escapeHtml(tb(st.message || ""))}</div>
+        ${
+          configPreview[kind]
+            ? `<pre class="preview-box" style="max-height:120px">${escapeHtml((configPreview[kind] || "").slice(0, 600))}</pre>`
+            : ""
+        }
+      </div>
+    </section>
+  `;
+}
+
+function routeStatusLabel(status) {
+  const s = (status || "ok").toLowerCase();
+  if (s === "standby") return t("models.statusStandby");
+  if (s === "disabled") return t("models.statusDisabled");
+  if (s === "exhausted") return t("models.statusExhausted");
+  if (s === "circuit_open") return t("models.statusCircuit");
+  return t("models.statusOk");
+}
+
+function routeStatusClass(status) {
+  const s = (status || "ok").toLowerCase();
+  if (s === "standby") return "warn";
+  if (s === "disabled") return "off";
+  if (s === "exhausted" || s === "circuit_open") return "err";
+  return "ok";
+}
+
+function renderModelsPage() {
+  return `
+    <div class="full-page">
+      <div class="config-page">
+        <div class="config-hero">
+          <div>
+            <h2>${t("models.title")}</h2>
+            <p>${t("models.desc")}</p>
+          </div>
+          <div class="actions">
+            <button class="btn" id="btn-models-refresh" ${modelsLoading ? "disabled" : ""}>
+              ${modelsLoading ? `<span class="spinner"></span>` : t("models.refresh")}
+            </button>
+          </div>
+        </div>
+        <section class="panel">
+          <div class="panel-body">
+            <div class="model-table-wrap table-scroll-lg">
+              ${
+                modelGroups.length
+                  ? `<table class="model-table">
+                <thead>
+                  <tr>
+                    <th>${t("models.colGroup")}</th>
+                    <th>${t("models.colProvider")}</th>
+                    <th>${t("models.colStatus")}</th>
+                    <th>${t("models.colPriority")}</th>
+                    <th>${t("models.colUsed")}</th>
+                    <th style="text-align:right">${t("models.colActions")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${modelGroups
+                    .map((g) => {
+                      const routes = g.routes || g.Routes || [];
+                      if (!routes.length) {
+                        return `<tr><td class="model-id"><strong>${escapeHtml(g.name || g.id)}</strong></td><td colspan="5">${t("common.dash")}</td></tr>`;
+                      }
+                      return routes
+                        .map((r, i) => {
+                          const rid = r.id || r.ID;
+                          const prio = r.priority ?? r.Priority ?? 0;
+                          const used = r.usedTokens ?? r.UsedTokens ?? 0;
+                          const status = r.status || r.Status || "ok";
+                          const en = !!(r.enabled ?? r.Enabled);
+                          return `<tr data-route="${escapeAttr(rid)}" data-group="${escapeAttr(g.id)}">
+                            <td>${i === 0 ? `<strong class="model-id">${escapeHtml(g.name || g.id)}</strong>` : ""}</td>
+                            <td>${escapeHtml(r.providerName || r.ProviderName || r.providerId || "")}<div class="hint mono">${escapeHtml(r.providerModelId || r.ProviderModelID || "")}</div></td>
+                            <td><span class="tag ${routeStatusClass(status)}">${routeStatusLabel(status)}</span></td>
+                            <td class="model-id">${prio}</td>
+                            <td class="model-id">${Number(used).toLocaleString()}</td>
+                            <td>
+                              <div class="row-actions">
+                                <button class="btn btn-sm" data-act="prio-up" ${modelsBusy ? "disabled" : ""}>${t("models.priorityUp")}</button>
+                                <button class="btn btn-sm" data-act="prio-down" ${modelsBusy ? "disabled" : ""}>${t("models.priorityDown")}</button>
+                                <button class="btn btn-sm" data-act="route-toggle" ${modelsBusy ? "disabled" : ""}>${en ? t("models.disable") : t("models.enable")}</button>
+                              </div>
+                            </td>
+                          </tr>`;
+                        })
+                        .join("");
+                    })
+                    .join("")}
+                </tbody>
+              </table>`
+                  : `<div class="empty-models"><strong>${t("models.empty")}</strong></div>`
+              }
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  `;
+}
+
+async function loadModelGroups() {
+  if (!hasBackend() || typeof ListModelGroups !== "function") {
+    modelGroups = [];
+    return;
+  }
+  modelsLoading = true;
+  try {
+    modelGroups = (await ListModelGroups()) || [];
+  } catch (e) {
+    toast(errMsg(e), "err");
+    modelGroups = [];
+  } finally {
+    modelsLoading = false;
+  }
+}
+
+function bindModelsEvents() {
+  document.getElementById("btn-models-refresh")?.addEventListener("click", async () => {
+    await loadModelGroups();
+    render();
+  });
+  document.querySelectorAll("tr[data-route]").forEach((row) => {
+    const rid = row.dataset.route;
+    const routesInGroup = () => {
+      const gid = row.dataset.group;
+      const g = modelGroups.find((x) => x.id === gid);
+      return (g?.routes || g?.Routes || []).slice().sort((a, b) => (a.priority ?? a.Priority ?? 0) - (b.priority ?? b.Priority ?? 0));
+    };
+    row.querySelector('[data-act="prio-up"]')?.addEventListener("click", async () => {
+      const list = routesInGroup();
+      const idx = list.findIndex((x) => (x.id || x.ID) === rid);
+      if (idx <= 0) return;
+      const cur = list[idx];
+      const prev = list[idx - 1];
+      const cp = cur.priority ?? cur.Priority ?? 10;
+      const pp = prev.priority ?? prev.Priority ?? 0;
+      modelsBusy = rid;
+      try {
+        await SetModelGroupRoutePriority(rid, pp);
+        await SetModelGroupRoutePriority(prev.id || prev.ID, cp);
+        await loadModelGroups();
+      } catch (e) {
+        toast(errMsg(e), "err");
+      } finally {
+        modelsBusy = "";
+        render();
+      }
+    });
+    row.querySelector('[data-act="prio-down"]')?.addEventListener("click", async () => {
+      const list = routesInGroup();
+      const idx = list.findIndex((x) => (x.id || x.ID) === rid);
+      if (idx < 0 || idx >= list.length - 1) return;
+      const cur = list[idx];
+      const next = list[idx + 1];
+      const cp = cur.priority ?? cur.Priority ?? 10;
+      const np = next.priority ?? next.Priority ?? 20;
+      modelsBusy = rid;
+      try {
+        await SetModelGroupRoutePriority(rid, np);
+        await SetModelGroupRoutePriority(next.id || next.ID, cp);
+        await loadModelGroups();
+      } catch (e) {
+        toast(errMsg(e), "err");
+      } finally {
+        modelsBusy = "";
+        render();
+      }
+    });
+    row.querySelector('[data-act="route-toggle"]')?.addEventListener("click", async () => {
+      const list = routesInGroup();
+      const cur = list.find((x) => (x.id || x.ID) === rid);
+      const en = !!(cur?.enabled ?? cur?.Enabled);
+      modelsBusy = rid;
+      try {
+        await SetModelGroupRouteEnabled(rid, !en);
+        await loadModelGroups();
+      } catch (e) {
+        toast(errMsg(e), "err");
+      } finally {
+        modelsBusy = "";
+        render();
+      }
+    });
+  });
 }
 
 function placeholder(kind, name) {
@@ -1086,7 +1334,7 @@ function renderDetail(p) {
                   <th>${t("detail.colId")}</th>
                   <th>${t("detail.colName")}</th>
                   <th>${t("detail.colStatus")}</th>
-                  <th style="width:280px;text-align:right">${t("detail.colActions")}</th>
+                  <th style="width:120px;text-align:right">${t("detail.colActions")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1103,9 +1351,6 @@ function renderDetail(p) {
                     </td>
                     <td>
                       <div class="row-actions">
-                        <button class="btn btn-sm" data-act="default" ${m.isDefault || !m.enabled ? "disabled" : ""}>${t("detail.setDefault")}</button>
-                        <button class="btn btn-sm" data-act="to-codex" title="${escapeAttr(t("detail.toCodexTitle"))}">${t("detail.toCodex")}</button>
-                        <button class="btn btn-sm" data-act="to-claude" title="${escapeAttr(t("detail.toClaudeTitle"))}">${t("detail.toClaude")}</button>
                         <button class="btn btn-sm btn-ghost" data-act="remove">${t("detail.remove")}</button>
                       </div>
                     </td>
@@ -1209,11 +1454,16 @@ function bindShellEvents() {
   document.querySelectorAll(".nav-tab").forEach((el) => {
     el.addEventListener("click", () => {
       const p = el.dataset.page;
-      page = ["configs", "proxy", "usage"].includes(p) ? p : "providers";
+      if (p === "configs") page = "apps";
+      else if (["models", "apps", "proxy", "usage"].includes(p)) page = p;
+      else page = "providers";
       localStorage.setItem(PAGE_KEY, page);
       render();
-      if (page === "configs" && !Object.keys(toolConfigs).length) {
+      if ((page === "apps" || page === "configs") && !Object.keys(toolConfigs).length) {
         loadToolConfigs(false);
+      }
+      if (page === "models") {
+        loadModelGroups().then(() => render());
       }
       if (page === "proxy") {
         refreshProxyStatus();
@@ -1525,6 +1775,46 @@ function bindUsageEvents() {
 
 function bindConfigEvents() {
   document.getElementById("btn-rescan")?.addEventListener("click", () => loadToolConfigs(true));
+
+  document.querySelectorAll("[data-act='takeover']").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const kind = btn.dataset.kind;
+      configsBusy = kind;
+      render();
+      try {
+        if (!hasBackend()) throw new Error(t("toast.runInWailsShort"));
+        const st = await InjectGateway(kind);
+        await applyToolStatus(st);
+        toast(st.message || t("apps.takenOver"));
+      } catch (e) {
+        toast(errMsg(e), "err");
+      } finally {
+        configsBusy = "";
+        render();
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-act='rollback-gw']").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const kind = btn.dataset.kind;
+      const name = toolConfigs[kind]?.name || kind;
+      if (!confirm(t("confirm.restoreDefault", { name }))) return;
+      configsBusy = kind;
+      render();
+      try {
+        if (!hasBackend()) throw new Error(t("toast.runInWailsShort"));
+        const st = await RollbackGateway(kind);
+        await applyToolStatus(st);
+        toast(st.message || t("toast.restored"));
+      } catch (e) {
+        toast(errMsg(e), "err");
+      } finally {
+        configsBusy = "";
+        render();
+      }
+    });
+  });
 
   document.querySelectorAll("[data-act='scan']").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -2361,8 +2651,11 @@ function openAddModal() {
   await loadPackageStatuses();
   booting = false;
   render();
-  if (page === "configs") {
+  if (page === "apps" || page === "configs") {
     loadToolConfigs(false);
+  }
+  if (page === "models") {
+    loadModelGroups().then(() => render());
   }
   if (page === "proxy") {
     // already refreshed

@@ -70,6 +70,10 @@ export function GetUsageStats() {
   return window['go']['main']['App']['GetUsageStats']();
 }
 
+export function InjectGateway(arg1) {
+  return window['go']['main']['App']['InjectGateway'](arg1);
+}
+
 export function ListModelGroups() {
   return window['go']['main']['App']['ListModelGroups']();
 }
@@ -96,6 +100,10 @@ export function RestoreDefaultConfig(arg1) {
 
 export function RevealConfigPath(arg1) {
   return window['go']['main']['App']['RevealConfigPath'](arg1);
+}
+
+export function RollbackGateway(arg1) {
+  return window['go']['main']['App']['RollbackGateway'](arg1);
 }
 
 export function SaveProviders(arg1) {

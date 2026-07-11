@@ -111,7 +111,7 @@ func (a *App) resolveTool(kind ToolKind) ToolConfigStatus {
 	st := ToolConfigStatus{Kind: string(kind), OS: goruntime.GOOS}
 	switch kind {
 	case ToolCodex:
-		st.Name = "Codex"
+		st.Name = "ChatGPT" // V2: display name (tool id remains codex for paths)
 		st.SearchPaths = codexSearchPaths()
 	case ToolClaude:
 		st.Name = "Claude Code"
