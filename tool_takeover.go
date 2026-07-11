@@ -86,6 +86,7 @@ func (a *App) InjectGateway(kind string) (ToolConfigStatus, error) {
 			err = writeFileAtomic(path, next)
 		}
 	}
+	_ = k // tool-specific virtual model applied inside inject helpers
 	if err != nil {
 		return st, err
 	}
@@ -113,11 +114,12 @@ func (a *App) InjectGateway(kind string) (ToolConfigStatus, error) {
 	_ = a.saveOverrides(ov)
 
 	st = a.resolveTool(k)
-	active := resolveActiveModelID()
+	virt := virtualModelForTool(string(k))
+	active := resolveActiveModelIDForTool(string(k))
 	if active == "" {
-		st.Message = fmt.Sprintf("已接管：base_url → %s，模型固定为 %s（请在模型管理中设默认，热切换无需再改配置）", base, gatewayVirtualModel)
+		st.Message = fmt.Sprintf("已接管：base_url → %s，模型固定为 %s（在应用管理切换模型，各应用独立）", base, virt)
 	} else {
-		st.Message = fmt.Sprintf("已接管：base_url → %s，模型=%s → 当前 %s（热切换只改代理，不写配置文件）", base, gatewayVirtualModel, active)
+		st.Message = fmt.Sprintf("已接管：base_url → %s，模型=%s → 当前 %s（仅本应用；热切换不写配置文件）", base, virt, active)
 	}
 	return st, nil
 }
@@ -145,8 +147,8 @@ func injectGatewayCodex(content, gatewayBase string) (string, error) {
 	// Drop env_key so Codex won't look for unset AIGATEWAY env vars
 	content = removeProviderField(content, gatewayProviderID, "env_key")
 	content = setTomlTopLevelString(content, "model_provider", gatewayProviderID)
-	// Pin stable virtual model — switch real model via SetActiveGatewayModel (proxy only).
-	content = setTomlTopLevelString(content, "model", gatewayVirtualModel)
+	// Pin ChatGPT-scoped virtual model — independent of Claude/OpenClaw/Harness.
+	content = setTomlTopLevelString(content, "model", virtualModelForTool(toolKeyChatGPT))
 	return content, nil
 }
 
@@ -173,16 +175,17 @@ func injectGatewayClaude(content, gatewayBase string) (string, error) {
 	if s, _ := env["ANTHROPIC_API_KEY"].(string); strings.TrimSpace(s) == "" {
 		env["ANTHROPIC_API_KEY"] = "aigateway"
 	}
-	// Pin virtual model for hot-switch (no further config edits)
-	env["ANTHROPIC_MODEL"] = gatewayVirtualModel
-	env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = gatewayVirtualModel
-	env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = gatewayVirtualModel
-	env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = gatewayVirtualModel
+	// Pin Claude-scoped virtual model (independent of other apps)
+	virt := virtualModelForTool(toolKeyClaude)
+	env["ANTHROPIC_MODEL"] = virt
+	env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = virt
+	env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = virt
+	env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = virt
 	// Clean legacy incorrect keys from earlier AIGateway versions
 	delete(env, "OPENAI_BASE_URL")
 	delete(env, "OPENAI_API_KEY")
 	root["env"] = env
-	root["model"] = gatewayVirtualModel
+	root["model"] = virt
 	delete(root, "apiBaseUrl")
 	delete(root, "baseUrl")
 	delete(root, "base_url")

@@ -358,5 +358,11 @@
   "models.isActive": "Active default",
   "apps.proxyModel": "Virtual {virtual} → {active}",
   "apps.hotSwitchHint": "Switch routes {virtual} via the proxy without rewriting tool configs.",
-  "toast.hotSwitched": "Hot-switched: {virtual} → {model} (config files unchanged)"
+  "toast.hotSwitched": "Hot-switched: {virtual} → {model} (config files unchanged)",
+  "apps.hotSwitchHintPerApp": "Switches this app only — other apps stay on their own model. No config file writes.",
+  "apps.bindingScope": "This app only",
+  "models.perAppBindings": "Each app has an independent model binding. Set defaults per app below.",
+  "models.inUseByApps": "In use",
+  "models.setForApp": "Set for {app}",
+  "toast.hotSwitchedApp": "Switched {app} → {model} (other apps unchanged)"
 }

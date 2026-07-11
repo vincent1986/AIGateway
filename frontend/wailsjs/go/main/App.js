@@ -46,8 +46,8 @@ export function FetchProviderModels(arg1, arg2) {
   return window['go']['main']['App']['FetchProviderModels'](arg1, arg2);
 }
 
-export function GetActiveGatewayModel() {
-  return window['go']['main']['App']['GetActiveGatewayModel']();
+export function GetActiveGatewayModel(arg1) {
+  return window['go']['main']['App']['GetActiveGatewayModel'](arg1);
 }
 
 export function GetProviderPackageStatuses() {
@@ -76,6 +76,10 @@ export function GetUsageStats() {
 
 export function InjectGateway(arg1) {
   return window['go']['main']['App']['InjectGateway'](arg1);
+}
+
+export function ListActiveGatewayModels() {
+  return window['go']['main']['App']['ListActiveGatewayModels']();
 }
 
 export function ListModelGroups() {
@@ -122,8 +126,8 @@ export function SaveProxyConfig(arg1) {
   return window['go']['main']['App']['SaveProxyConfig'](arg1);
 }
 
-export function SetActiveGatewayModel(arg1) {
-  return window['go']['main']['App']['SetActiveGatewayModel'](arg1);
+export function SetActiveGatewayModel(arg1, arg2) {
+  return window['go']['main']['App']['SetActiveGatewayModel'](arg1, arg2);
 }
 
 export function SetModelGroupRouteEnabled(arg1, arg2) {

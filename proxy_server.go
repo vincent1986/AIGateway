@@ -336,20 +336,18 @@ func (p *proxyServer) handleModels(w http.ResponseWriter, r *http.Request) {
 	}
 	data := make([]item, 0, 32)
 	seen := map[string]bool{}
-	// Stable virtual model first — tools pin this id; proxy hot-switches upstream.
-	active := resolveActiveModelID()
-	data = append(data, item{
-		ID:      gatewayVirtualModel,
-		Object:  "model",
-		OwnedBy: "aigateway",
-	})
-	seen[gatewayVirtualModel] = true
-	// also list aigateway alias for OpenClaw-style provider/model pickers
+	// Per-tool virtual models first — each app pins its own id for independent routing.
+	for _, vid := range allVirtualModelIDs() {
+		if seen[vid] {
+			continue
+		}
+		seen[vid] = true
+		data = append(data, item{ID: vid, Object: "model", OwnedBy: "aigateway"})
+	}
 	if !seen["aigateway"] {
 		data = append(data, item{ID: "aigateway", Object: "model", OwnedBy: "aigateway"})
 		seen["aigateway"] = true
 	}
-	_ = active // available for clients that inspect owned_by / future fields
 	for _, prov := range providers {
 		for _, m := range prov.Models {
 			if !m.Enabled {

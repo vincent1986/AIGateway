@@ -24,7 +24,7 @@ export function EnsureProxyRouting():Promise<main.ProxyStatus>;
 
 export function FetchProviderModels(arg1:string,arg2:string):Promise<Array<main.FetchModelItem>>;
 
-export function GetActiveGatewayModel():Promise<main.ActiveGatewayModelInfo>;
+export function GetActiveGatewayModel(arg1:string):Promise<main.ActiveGatewayModelInfo>;
 
 export function GetProviderPackageStatuses():Promise<Array<main.ProviderPackageStatus>>;
 
@@ -39,6 +39,8 @@ export function GetToolConfig(arg1:string):Promise<main.ToolConfigStatus>;
 export function GetUsageStats():Promise<main.UsageStats>;
 
 export function InjectGateway(arg1:string):Promise<main.ToolConfigStatus>;
+
+export function ListActiveGatewayModels():Promise<Array<main.ActiveGatewayModelInfo>>;
 
 export function ListModelGroups():Promise<Array<main.ModelGroupView>>;
 
@@ -62,7 +64,7 @@ export function SaveProviders(arg1:Array<main.Provider>):Promise<void>;
 
 export function SaveProxyConfig(arg1:main.ProxyConfig):Promise<main.ProxyStatus>;
 
-export function SetActiveGatewayModel(arg1:string):Promise<main.ActiveGatewayModelInfo>;
+export function SetActiveGatewayModel(arg1:string,arg2:string):Promise<main.ActiveGatewayModelInfo>;
 
 export function SetModelGroupRouteEnabled(arg1:string,arg2:boolean):Promise<void>;
 

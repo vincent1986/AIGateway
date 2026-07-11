@@ -251,16 +251,17 @@ func injectOpenClawGateway(configPath, gatewayURL, apiKey string, modelIDs []str
 	if len(modelIDs) == 0 {
 		modelIDs = collectEnabledModelIDs()
 	}
-	// Always ensure virtual model is first in catalog
+	// Pin OpenClaw-scoped virtual model (independent of other apps)
+	virt := virtualModelForTool(toolKeyOpenClaw)
 	hasVirtual := false
 	for _, mid := range modelIDs {
-		if mid == gatewayVirtualModel {
+		if mid == virt {
 			hasVirtual = true
 			break
 		}
 	}
 	if !hasVirtual {
-		modelIDs = append([]string{gatewayVirtualModel}, modelIDs...)
+		modelIDs = append([]string{virt}, modelIDs...)
 	}
 
 	// models.mode + models.providers.aigateway
@@ -280,8 +281,8 @@ func injectOpenClawGateway(configPath, gatewayURL, apiKey string, modelIDs []str
 			continue
 		}
 		name := mid
-		if mid == gatewayVirtualModel {
-			name = "AIGateway hot-switch (" + gatewayVirtualModel + ")"
+		if mid == virt {
+			name = "AIGateway OpenClaw (" + virt + ")"
 		}
 		modelObjs = append(modelObjs, map[string]any{
 			"id":   mid,
@@ -297,7 +298,7 @@ func injectOpenClawGateway(configPath, gatewayURL, apiKey string, modelIDs []str
 	modelsRoot["providers"] = providers
 	root["models"] = modelsRoot
 
-	// agents.defaults.model.primary + allowlist — pin virtual model
+	// agents.defaults.model.primary + allowlist — pin OpenClaw virtual model
 	agents, _ := root["agents"].(map[string]any)
 	if agents == nil {
 		agents = map[string]any{}
@@ -306,7 +307,7 @@ func injectOpenClawGateway(configPath, gatewayURL, apiKey string, modelIDs []str
 	if defaults == nil {
 		defaults = map[string]any{}
 	}
-	primary := openclawProviderID + "/" + gatewayVirtualModel
+	primary := openclawProviderID + "/" + virt
 	modelBlock, _ := defaults["model"].(map[string]any)
 	if modelBlock == nil {
 		modelBlock = map[string]any{}
@@ -321,8 +322,8 @@ func injectOpenClawGateway(configPath, gatewayURL, apiKey string, modelIDs []str
 	for _, mid := range modelIDs {
 		ref := openclawProviderID + "/" + mid
 		alias := mid
-		if mid == gatewayVirtualModel {
-			alias = "AIGateway"
+		if mid == virt {
+			alias = "AIGateway-OpenClaw"
 		}
 		if _, ok := allow[ref]; !ok {
 			allow[ref] = map[string]any{"alias": alias}
@@ -492,13 +493,8 @@ func injectHarnessYAML(configPath, gatewayURL, apiKey, model string) error {
 	if apiKey == "" {
 		apiKey = "aigateway"
 	}
-	// Always pin virtual model for proxy hot-switch
-	if model == "" || isGatewayVirtualModel(model) {
-		model = gatewayVirtualModel
-	} else {
-		// takeover path: force virtual; real model selected via SetActiveGatewayModel
-		model = gatewayVirtualModel
-	}
+	// Always pin Harness-scoped virtual model for independent hot-switch
+	model = virtualModelForTool(toolKeyHarness)
 	// top-level keys commonly read by agent harnesses
 	content = upsertYAMLKey(content, "model", model)
 	content = upsertYAMLKey(content, "base_url", gatewayURL)
@@ -536,8 +532,8 @@ func injectHarnessJSON(configPath, gatewayURL, apiKey, model string) error {
 	if apiKey == "" {
 		apiKey = "aigateway"
 	}
-	// Pin virtual model — real upstream chosen by active gateway binding
-	model = gatewayVirtualModel
+	// Pin Harness-scoped virtual model — independent binding
+	model = virtualModelForTool(toolKeyHarness)
 	root["model"] = model
 	root["base_url"] = gatewayURL
 	root["baseUrl"] = gatewayURL

@@ -125,7 +125,8 @@ func (a *App) syncCodexProviderBases(list []Provider) (string, error) {
 		content = setProviderField(content, gatewayProviderID, "api_key", localKey)
 		content = removeProviderField(content, gatewayProviderID, "env_key")
 		content = setTomlTopLevelString(content, "model_provider", gatewayProviderID)
-		content = setTomlTopLevelString(content, "model", gatewayVirtualModel)
+		virt := virtualModelForTool(toolKeyChatGPT)
+		content = setTomlTopLevelString(content, "model", virt)
 	}
 
 	content = stripAllWireAPI(content)
@@ -133,7 +134,7 @@ func (a *App) syncCodexProviderBases(list []Provider) (string, error) {
 	if err := writeFileAtomic(path, content); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("已同步 Codex：%d 个走代理，%d 个直连（代理模式 model=%s）", nProxy, nDirect, gatewayVirtualModel), nil
+	return fmt.Sprintf("已同步 Codex：%d 个走代理，%d 个直连（代理模式 model=%s）", nProxy, nDirect, virtualModelForTool(toolKeyChatGPT)), nil
 }
 
 // stripAllWireAPI removes deprecated wire_api lines from config.toml.

@@ -1,6 +1,7 @@
 export namespace main {
 	
 	export class ActiveGatewayModelInfo {
+	    kind: string;
 	    virtualModel: string;
 	    activeModel: string;
 	    aliases: string[];
@@ -11,6 +12,7 @@ export namespace main {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
 	        this.virtualModel = source["virtualModel"];
 	        this.activeModel = source["activeModel"];
 	        this.aliases = source["aliases"];

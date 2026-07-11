@@ -127,13 +127,14 @@ func (a *App) ApplyToolModel(req ModelApplyRequest) (ToolConfigStatus, error) {
 			envVar = providerEnvVarName(providerID, displayName)
 		}
 		if viaProxy && writeBase != "" && isLocalProxyURL(writeBase) {
-			// Bind real model in gateway; write only virtual id into config.toml
-			_ = persistActiveGatewayModel(model)
+			// Bind real model for ChatGPT only; write ChatGPT virtual id into config.toml
+			_ = persistActiveGatewayModelForTool(toolKeyChatGPT, model)
+			virt := virtualModelForTool(toolKeyChatGPT)
 			const localKey = "aigateway"
-			next = applyCodexModelSwitch(content, gatewayVirtualModel, gatewayProviderID, "AIGateway", writeBase, localKey)
+			next = applyCodexModelSwitch(content, virt, gatewayProviderID, "AIGateway", writeBase, localKey)
 			next = removeProviderField(next, gatewayProviderID, "env_key")
 			next = setProviderField(next, gatewayProviderID, "api_key", localKey)
-			autoBakMsg += "；model=" + gatewayVirtualModel + " → " + model + "（仅代理热切换）"
+			autoBakMsg += "；model=" + virt + " → " + model + "（ChatGPT 独立热切换）"
 		} else {
 			next = applyCodexModelSwitch(content, model, providerID, displayName, writeBase, apiKey)
 			if apiKey != "" {
@@ -190,13 +191,14 @@ func (a *App) ApplyToolModel(req ModelApplyRequest) (ToolConfigStatus, error) {
 				}
 			}
 			if viaProxy && writeBase != "" && isLocalProxyURL(writeBase) {
-				_ = persistActiveGatewayModel(model)
-				// Config always holds aiSwitchModel; real model is gateway-bound
-				next, err = applyClaudeModelSwitch(content, gatewayVirtualModel, writeBase, apiKey, "aigateway")
+				_ = persistActiveGatewayModelForTool(toolKeyClaude, model)
+				virt := virtualModelForTool(toolKeyClaude)
+				// Config holds Claude-scoped virtual model; real model is gateway-bound
+				next, err = applyClaudeModelSwitch(content, virt, writeBase, apiKey, "aigateway")
 				if err != nil {
 					return ToolConfigStatus{}, err
 				}
-				autoBakMsg += "；model=" + gatewayVirtualModel + " → " + model + "（仅代理热切换）"
+				autoBakMsg += "；model=" + virt + " → " + model + "（Claude 独立热切换）"
 			} else {
 				next, err = applyClaudeModelSwitch(content, model, writeBase, apiKey, providerID)
 				if err != nil {
@@ -232,12 +234,13 @@ func (a *App) ApplyToolModel(req ModelApplyRequest) (ToolConfigStatus, error) {
 		if apiKey == "" {
 			apiKey = "aigateway"
 		}
-		_ = persistActiveGatewayModel(model)
-		next, err = applyOpenClawModelSwitch(content, gatewayVirtualModel, writeBase, apiKey)
+		_ = persistActiveGatewayModelForTool(toolKeyOpenClaw, model)
+		virtOC := virtualModelForTool(toolKeyOpenClaw)
+		next, err = applyOpenClawModelSwitch(content, virtOC, writeBase, apiKey)
 		if err != nil {
 			return ToolConfigStatus{}, err
 		}
-		autoBakMsg += "；OpenClaw primary → aigateway/" + gatewayVirtualModel + " → " + model
+		autoBakMsg += "；OpenClaw primary → aigateway/" + virtOC + " → " + model
 	case ToolHarness:
 		writeBase := baseURL
 		if writeBase == "" || providerIDWantsProxy(providerID, displayName, baseURL) {
@@ -254,13 +257,14 @@ func (a *App) ApplyToolModel(req ModelApplyRequest) (ToolConfigStatus, error) {
 		if apiKey == "" {
 			apiKey = "aigateway"
 		}
-		_ = persistActiveGatewayModel(model)
+		_ = persistActiveGatewayModelForTool(toolKeyHarness, model)
+		virtH := virtualModelForTool(toolKeyHarness)
 		isJSON := strings.HasSuffix(strings.ToLower(path), ".json")
-		next, err = applyHarnessModelSwitch(content, gatewayVirtualModel, writeBase, apiKey, isJSON)
+		next, err = applyHarnessModelSwitch(content, virtH, writeBase, apiKey, isJSON)
 		if err != nil {
 			return ToolConfigStatus{}, err
 		}
-		autoBakMsg += "；Harness model=" + gatewayVirtualModel + " → " + model
+		autoBakMsg += "；Harness model=" + virtH + " → " + model
 	}
 
 	next = preserveLineEndings(content, next)

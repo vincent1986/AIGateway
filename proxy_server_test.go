@@ -217,13 +217,13 @@ func TestProxyStreamChatCompletionsVirtualModel(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.SetActiveGatewayModel("deepseek-v4-pro"); err != nil {
+	if _, err := a.SetActiveGatewayModel("chatgpt", "deepseek-v4-pro"); err != nil {
 		t.Fatal(err)
 	}
 
 	px := newProxyServer()
 	body, _ := json.Marshal(map[string]any{
-		"model":  "aiSwitchModel",
+		"model":  virtualModelForTool("chatgpt"),
 		"stream": true,
 		"messages": []map[string]string{
 			{"role": "user", "content": "hi"},

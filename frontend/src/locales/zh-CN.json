@@ -358,5 +358,11 @@
   "models.isActive": "当前默认",
   "apps.proxyModel": "虚拟模型 {virtual} → 当前 {active}",
   "apps.hotSwitchHint": "切换真实上游模型（代理热切换，不写配置文件）",
-  "toast.hotSwitched": "已热切换：{virtual} → {model}（未修改配置文件）"
+  "toast.hotSwitched": "已热切换：{virtual} → {model}（未修改配置文件）",
+  "apps.hotSwitchHintPerApp": "仅切换当前应用的上游模型，不影响其他应用；不写配置文件。",
+  "apps.bindingScope": "仅本应用",
+  "models.perAppBindings": "各应用模型绑定相互独立，在下方按应用设为默认。",
+  "models.inUseByApps": "使用中",
+  "models.setForApp": "设为 {app} 的默认",
+  "toast.hotSwitchedApp": "已切换 {app} → {model}（其他应用不变）"
 }

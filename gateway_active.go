@@ -1,65 +1,193 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
 )
 
-// Stable virtual model id written into tool configs once (InjectGateway).
-// Clients keep requesting this model forever; AIGateway maps it to the active
-// real model group in memory/SQLite — no further config file edits.
-const gatewayVirtualModel = "aiSwitchModel"
-
-// meta key for currently selected real model group id
-const metaActiveGatewayModel = "active_gateway_model"
-
-var (
-	activeModelMu sync.RWMutex
-	// in-memory cache; source of truth is SQLite meta when available
-	activeModelCache string
+// Per-tool virtual model ids written into tool configs on InjectGateway.
+// Each app requests its own virtual id so proxy bindings never cross-affect.
+const (
+	gatewayVirtualModel         = "aiSwitchModel" // legacy alias → chatgpt
+	gatewayVirtualModelChatGPT  = "aiSwitchModel-chatgpt"
+	gatewayVirtualModelClaude   = "aiSwitchModel-claude"
+	gatewayVirtualModelOpenClaw = "aiSwitchModel-openclaw"
+	gatewayVirtualModelHarness  = "aiSwitchModel-harness"
 )
 
-// isGatewayVirtualModel reports whether the client model is the stable hot-switch alias.
-func isGatewayVirtualModel(model string) bool {
-	m := strings.ToLower(strings.TrimSpace(model))
-	switch m {
-	case "aiswitchmodel", "ai-switch-model", "ai_switch_model",
-		"aigateway", "aigateway/default", "aigateway/aiswitchmodel",
-		"default", "gateway", "codex-proxy":
-		return true
+// meta keys
+const (
+	metaActiveGatewayModel  = "active_gateway_model"  // legacy single binding
+	metaActiveGatewayModels = "active_gateway_models" // JSON map tool→model
+)
+
+// tool keys stored in meta JSON
+const (
+	toolKeyChatGPT  = "chatgpt"
+	toolKeyClaude   = "claude"
+	toolKeyOpenClaw = "openclaw"
+	toolKeyHarness  = "harness"
+)
+
+var (
+	activeModelMu    sync.RWMutex
+	activeModelCache map[string]string // toolKey → real model id
+)
+
+func allToolKeys() []string {
+	return []string{toolKeyChatGPT, toolKeyClaude, toolKeyOpenClaw, toolKeyHarness}
+}
+
+func normalizeToolKey(kind string) string {
+	k := strings.ToLower(strings.TrimSpace(kind))
+	switch k {
+	case "codex", "chatgpt", "gpt", "openai-codex":
+		return toolKeyChatGPT
+	case "claude", "claude_code", "claudecode":
+		return toolKeyClaude
+	case "openclaw":
+		return toolKeyOpenClaw
+	case "harness":
+		return toolKeyHarness
+	case "":
+		return toolKeyChatGPT
 	default:
-		// also accept aigateway/<anything> that is only the virtual name
-		if strings.HasPrefix(m, "aigateway/") {
-			rest := strings.TrimPrefix(m, "aigateway/")
-			return rest == "" || rest == "default" || rest == "aiswitchmodel" || rest == "ai-switch-model"
-		}
-		return false
+		return k
 	}
 }
 
-// resolveActiveModelID returns the real model group currently bound to aiSwitchModel.
-func resolveActiveModelID() string {
-	activeModelMu.RLock()
-	cached := strings.TrimSpace(activeModelCache)
-	activeModelMu.RUnlock()
-	if cached != "" {
-		return cached
+// virtualModelForTool returns the stable model id pinned in that tool's config.
+func virtualModelForTool(kind string) string {
+	switch normalizeToolKey(kind) {
+	case toolKeyClaude:
+		return gatewayVirtualModelClaude
+	case toolKeyOpenClaw:
+		return gatewayVirtualModelOpenClaw
+	case toolKeyHarness:
+		return gatewayVirtualModelHarness
+	default:
+		return gatewayVirtualModelChatGPT
 	}
+}
+
+// toolKeyFromVirtualModel maps a client model string to tool key; ok=false if not virtual.
+func toolKeyFromVirtualModel(model string) (toolKey string, ok bool) {
+	m := strings.ToLower(strings.TrimSpace(model))
+	// strip aigateway/ prefix used by OpenClaw-style refs
+	if strings.HasPrefix(m, "aigateway/") {
+		m = strings.TrimPrefix(m, "aigateway/")
+	}
+	switch m {
+	case "aiswitchmodel-chatgpt", "aiswitchmodel_chatgpt", "ai-switch-model-chatgpt":
+		return toolKeyChatGPT, true
+	case "aiswitchmodel-claude", "aiswitchmodel_claude", "ai-switch-model-claude":
+		return toolKeyClaude, true
+	case "aiswitchmodel-openclaw", "aiswitchmodel_openclaw", "ai-switch-model-openclaw":
+		return toolKeyOpenClaw, true
+	case "aiswitchmodel-harness", "aiswitchmodel_harness", "ai-switch-model-harness":
+		return toolKeyHarness, true
+	// legacy shared aliases → ChatGPT binding (backward compatible)
+	case "aiswitchmodel", "ai-switch-model", "ai_switch_model",
+		"aigateway", "default", "gateway", "codex-proxy", "":
+		return toolKeyChatGPT, true
+	default:
+		return "", false
+	}
+}
+
+// isGatewayVirtualModel reports whether the client model is a hot-switch alias.
+func isGatewayVirtualModel(model string) bool {
+	_, ok := toolKeyFromVirtualModel(model)
+	// toolKeyFromVirtualModel also treats empty as chatgpt — avoid empty string
+	if strings.TrimSpace(model) == "" {
+		return false
+	}
+	return ok
+}
+
+// allVirtualModelIDs listed by /v1/models (real tools pin one of these).
+func allVirtualModelIDs() []string {
+	return []string{
+		gatewayVirtualModelChatGPT,
+		gatewayVirtualModelClaude,
+		gatewayVirtualModelOpenClaw,
+		gatewayVirtualModelHarness,
+		gatewayVirtualModel, // legacy
+	}
+}
+
+func loadActiveModelMap() map[string]string {
+	activeModelMu.RLock()
+	if activeModelCache != nil {
+		out := make(map[string]string, len(activeModelCache))
+		for k, v := range activeModelCache {
+			out[k] = v
+		}
+		activeModelMu.RUnlock()
+		return out
+	}
+	activeModelMu.RUnlock()
+
+	out := map[string]string{}
 	if db, err := openDB(); err == nil {
-		if v := strings.TrimSpace(metaGet(db, metaActiveGatewayModel)); v != "" {
-			activeModelMu.Lock()
-			activeModelCache = v
-			activeModelMu.Unlock()
-			return v
+		if raw := strings.TrimSpace(metaGet(db, metaActiveGatewayModels)); raw != "" {
+			_ = json.Unmarshal([]byte(raw), &out)
+		}
+		// migrate legacy single key → chatgpt (and fill empty slots as soft default)
+		if legacy := strings.TrimSpace(metaGet(db, metaActiveGatewayModel)); legacy != "" {
+			if out[toolKeyChatGPT] == "" {
+				out[toolKeyChatGPT] = legacy
+			}
 		}
 	}
-	// fallback: first enabled provider default, else first enabled model
-	id := discoverDefaultModelID()
-	if id != "" {
-		_ = persistActiveGatewayModel(id)
+	if out == nil {
+		out = map[string]string{}
 	}
-	return id
+	activeModelMu.Lock()
+	activeModelCache = out
+	activeModelMu.Unlock()
+	return out
+}
+
+func saveActiveModelMap(m map[string]string) error {
+	if m == nil {
+		m = map[string]string{}
+	}
+	activeModelMu.Lock()
+	activeModelCache = m
+	activeModelMu.Unlock()
+	b, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+	if db, err := openDB(); err == nil {
+		if err := metaSet(db, metaActiveGatewayModels, string(b)); err != nil {
+			return err
+		}
+		// keep legacy key in sync with chatgpt for older readers
+		if v := m[toolKeyChatGPT]; v != "" {
+			_ = metaSet(db, metaActiveGatewayModel, v)
+		}
+	}
+	return nil
+}
+
+// resolveActiveModelIDForTool returns the real model bound for a tool key.
+func resolveActiveModelIDForTool(toolKey string) string {
+	toolKey = normalizeToolKey(toolKey)
+	m := loadActiveModelMap()
+	if v := strings.TrimSpace(m[toolKey]); v != "" {
+		return v
+	}
+	// do not auto-write across tools — only fall back to discovery without polluting map
+	return discoverDefaultModelID()
+}
+
+// resolveActiveModelID is legacy helper (chatgpt / shared alias path).
+func resolveActiveModelID() string {
+	return resolveActiveModelIDForTool(toolKeyChatGPT)
 }
 
 func discoverDefaultModelID() string {
@@ -67,7 +195,6 @@ func discoverDefaultModelID() string {
 	if err != nil {
 		return ""
 	}
-	// prefer explicit isDefault
 	for _, p := range list {
 		for _, m := range p.Models {
 			if m.Enabled && m.IsDefault && strings.TrimSpace(m.ID) != "" {
@@ -82,7 +209,6 @@ func discoverDefaultModelID() string {
 			}
 		}
 	}
-	// try model_groups table
 	if db, err := openDB(); err == nil {
 		var id string
 		_ = db.QueryRow(`SELECT id FROM model_groups WHERE enabled = 1 ORDER BY name COLLATE NOCASE LIMIT 1`).Scan(&id)
@@ -91,93 +217,119 @@ func discoverDefaultModelID() string {
 	return ""
 }
 
-func persistActiveGatewayModel(modelID string) error {
+func normalizeRealModelID(modelID string) (string, error) {
 	modelID = strings.TrimSpace(modelID)
 	if modelID == "" {
-		return fmt.Errorf("模型不能为空")
+		return "", fmt.Errorf("模型不能为空")
 	}
-	// strip virtual prefixes if user pasted aigateway/xxx by mistake
 	if isGatewayVirtualModel(modelID) {
-		return fmt.Errorf("不能将虚拟模型 %s 设为自身目标", gatewayVirtualModel)
+		return "", fmt.Errorf("不能将虚拟模型设为绑定目标")
 	}
 	if i := strings.Index(modelID, "/"); i > 0 {
-		// aigateway/deepseek-v4-pro → deepseek-v4-pro only when provider is our alias
-		// keep full id for provider/model style real models? Real group ids are plain model ids.
-		// If user passes provider/model and group is just model, use rest when provider is aigateway
 		pref := strings.ToLower(modelID[:i])
 		if pref == "aigateway" {
 			modelID = modelID[i+1:]
 		}
 	}
-	activeModelMu.Lock()
-	activeModelCache = modelID
-	activeModelMu.Unlock()
-	if db, err := openDB(); err == nil {
-		return metaSet(db, metaActiveGatewayModel, modelID)
+	if isGatewayVirtualModel(modelID) {
+		return "", fmt.Errorf("不能将虚拟模型设为绑定目标")
 	}
-	return nil
+	return modelID, nil
 }
 
-// ActiveGatewayModelInfo is exposed to the UI.
+func persistActiveGatewayModelForTool(toolKey, modelID string) error {
+	toolKey = normalizeToolKey(toolKey)
+	modelID, err := normalizeRealModelID(modelID)
+	if err != nil {
+		return err
+	}
+	m := loadActiveModelMap()
+	if m == nil {
+		m = map[string]string{}
+	}
+	// copy to avoid races with concurrent readers holding the same map ref
+	next := make(map[string]string, len(m)+1)
+	for k, v := range m {
+		next[k] = v
+	}
+	next[toolKey] = modelID
+	return saveActiveModelMap(next)
+}
+
+// persistActiveGatewayModel binds for chatgpt only (legacy callers / codex auto-sync).
+func persistActiveGatewayModel(modelID string) error {
+	return persistActiveGatewayModelForTool(toolKeyChatGPT, modelID)
+}
+
+// ActiveGatewayModelInfo is exposed to the UI (one tool).
 type ActiveGatewayModelInfo struct {
-	// VirtualModel is the stable id tools should request (aiSwitchModel).
-	VirtualModel string `json:"virtualModel"`
-	// ActiveModel is the real model group currently routed.
-	ActiveModel string `json:"activeModel"`
-	// Aliases accepted by the proxy for the virtual model.
-	Aliases []string `json:"aliases"`
+	Kind         string   `json:"kind"`         // chatgpt | claude | openclaw | harness
+	VirtualModel string   `json:"virtualModel"` // pinned in tool config
+	ActiveModel  string   `json:"activeModel"`  // real model group
+	Aliases      []string `json:"aliases"`
 }
 
-// GetActiveGatewayModel returns virtual alias + currently bound real model.
-func (a *App) GetActiveGatewayModel() ActiveGatewayModelInfo {
+// GetActiveGatewayModel returns binding for one tool (empty kind → chatgpt).
+func (a *App) GetActiveGatewayModel(kind string) ActiveGatewayModelInfo {
+	toolKey := normalizeToolKey(kind)
+	virt := virtualModelForTool(toolKey)
 	return ActiveGatewayModelInfo{
-		VirtualModel: gatewayVirtualModel,
-		ActiveModel:  resolveActiveModelID(),
-		Aliases: []string{
-			gatewayVirtualModel,
-			"aigateway",
-			"default",
-		},
+		Kind:         toolKey,
+		VirtualModel: virt,
+		ActiveModel:  resolveActiveModelIDForTool(toolKey),
+		Aliases:      []string{virt, gatewayVirtualModel},
 	}
 }
 
-// SetActiveGatewayModel binds the virtual model (aiSwitchModel) to a real model group.
-// This is a hot switch: tools keep their config; next proxy requests use the new upstream.
-func (a *App) SetActiveGatewayModel(modelID string) (ActiveGatewayModelInfo, error) {
+// ListActiveGatewayModels returns bindings for all managed tools.
+func (a *App) ListActiveGatewayModels() []ActiveGatewayModelInfo {
+	out := make([]ActiveGatewayModelInfo, 0, 4)
+	for _, k := range allToolKeys() {
+		out = append(out, a.GetActiveGatewayModel(k))
+	}
+	return out
+}
+
+// SetActiveGatewayModel binds one tool's virtual model to a real model group.
+// kind: chatgpt|codex|claude|openclaw|harness — independent per app.
+func (a *App) SetActiveGatewayModel(kind, modelID string) (ActiveGatewayModelInfo, error) {
+	toolKey := normalizeToolKey(kind)
 	modelID = strings.TrimSpace(modelID)
 	if modelID == "" {
-		return a.GetActiveGatewayModel(), fmt.Errorf("模型不能为空")
+		return a.GetActiveGatewayModel(toolKey), fmt.Errorf("模型不能为空")
 	}
-	// validate: model should be routable
-	cands, err := resolveRoutesLegacy(modelID)
-	if err != nil || len(cands) == 0 {
-		// also allow pure group id present in SQL even if no live key yet
+	// validate routable
+	if cands, err := resolveRoutesLegacy(modelID); err != nil || len(cands) == 0 {
 		if db, err2 := openDB(); err2 == nil {
 			var n int
 			_ = db.QueryRow(`SELECT COUNT(1) FROM model_groups WHERE id = ?`, modelID).Scan(&n)
 			if n == 0 {
-				// try SQL routes directly
 				if c2, e2 := resolveRoutesFromSQL(db, modelID); e2 != nil || len(c2) == 0 {
 					if err != nil {
-						return a.GetActiveGatewayModel(), fmt.Errorf("无法设为默认: %w", err)
+						return a.GetActiveGatewayModel(toolKey), fmt.Errorf("无法设为默认: %w", err)
 					}
-					return a.GetActiveGatewayModel(), fmt.Errorf("未找到模型 %q 的可用路由", modelID)
+					return a.GetActiveGatewayModel(toolKey), fmt.Errorf("未找到模型 %q 的可用路由", modelID)
 				}
 			}
 		} else if err != nil {
-			return a.GetActiveGatewayModel(), fmt.Errorf("无法设为默认: %w", err)
+			return a.GetActiveGatewayModel(toolKey), fmt.Errorf("无法设为默认: %w", err)
 		}
 	}
-	if err := persistActiveGatewayModel(modelID); err != nil {
-		return a.GetActiveGatewayModel(), err
+	if err := persistActiveGatewayModelForTool(toolKey, modelID); err != nil {
+		return a.GetActiveGatewayModel(toolKey), err
 	}
-	// ensure proxy running so switch is live
 	if a.proxy != nil {
 		st := a.proxy.status()
 		if !st.Running {
 			_ = a.proxy.start()
 		}
 	}
-	info := a.GetActiveGatewayModel()
-	return info, nil
+	return a.GetActiveGatewayModel(toolKey), nil
+}
+
+// clearActiveModelCache used by closeDB / tests.
+func clearActiveModelCache() {
+	activeModelMu.Lock()
+	activeModelCache = nil
+	activeModelMu.Unlock()
 }

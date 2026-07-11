@@ -37,6 +37,7 @@ import {
   RollbackGateway,
   GetActiveGatewayModel,
   SetActiveGatewayModel,
+  ListActiveGatewayModels,
 } from "../wailsjs/go/main/App";
 
 /** @typedef {{ id: string, name: string, baseUrl: string, apiKey: string, color: string, models: Model[] }} Provider */
@@ -123,8 +124,34 @@ let page = (() => {
 let modelGroups = [];
 let modelsLoading = false;
 let modelsBusy = "";
-/** @type {{ virtualModel?: string, activeModel?: string, aliases?: string[] }} */
-let activeGateway = { virtualModel: "aiSwitchModel", activeModel: "", aliases: [] };
+/** @type {Record<string, { kind: string, virtualModel: string, activeModel: string }>} */
+let activeByTool = {};
+/** Map UI kind codex → backend chatgpt */
+function toolKeyForUI(kind) {
+  const k = String(kind || "").toLowerCase();
+  if (k === "codex" || k === "chatgpt") return "chatgpt";
+  if (k === "claude" || k === "claude_code") return "claude";
+  if (k === "openclaw") return "openclaw";
+  if (k === "harness") return "harness";
+  return k || "chatgpt";
+}
+function activeModelForTool(kind) {
+  const key = toolKeyForUI(kind);
+  return activeByTool[key]?.activeModel || "";
+}
+function virtualModelForToolUI(kind) {
+  const key = toolKeyForUI(kind);
+  return (
+    activeByTool[key]?.virtualModel ||
+    {
+      chatgpt: "aiSwitchModel-chatgpt",
+      claude: "aiSwitchModel-claude",
+      openclaw: "aiSwitchModel-openclaw",
+      harness: "aiSwitchModel-harness",
+    }[key] ||
+    "aiSwitchModel-chatgpt"
+  );
+}
 
 /** @type {null | { total?: any, byDay?: any[], byModel?: any[], byProvider?: any[], recent?: any[] }} */
 let usageStats = null;
@@ -387,10 +414,17 @@ function isVirtualGatewayModelId(id) {
   const m = String(id || "").trim().toLowerCase();
   if (!m) return false;
   if (m === "aiswitchmodel" || m === "ai-switch-model" || m === "ai_switch_model") return true;
+  if (m.startsWith("aiswitchmodel-") || m.startsWith("aiswitchmodel_")) return true;
   if (m === "aigateway" || m === "default" || m === "gateway" || m === "codex-proxy") return true;
   if (m.startsWith("aigateway/")) {
     const rest = m.slice("aigateway/".length);
-    return !rest || rest === "default" || rest === "aiswitchmodel" || rest === "ai-switch-model";
+    return (
+      !rest ||
+      rest === "default" ||
+      rest === "aiswitchmodel" ||
+      rest.startsWith("aiswitchmodel") ||
+      rest === "ai-switch-model"
+    );
   }
   return false;
 }
@@ -825,8 +859,8 @@ function renderAppCard(st) {
   const kind = st.kind;
   const busy = configsBusy === kind;
   const ok = !!st.found && !!st.exists;
-  const active = activeGateway.activeModel || "";
-  // Real models only — never list aiSwitchModel (config pin is invisible to users)
+  const active = activeModelForTool(kind);
+  // Real models only — never list virtual gateway pins
   const choices = modelChoicesFor(kind).filter((c) => !isVirtualGatewayModelId(c.id));
   const selectedModel =
     pendingModel[kind] && !isVirtualGatewayModelId(pendingModel[kind])
@@ -837,7 +871,7 @@ function renderAppCard(st) {
   const modelSwitch = `
         <div class="field" style="margin-top:12px">
           <label style="font-size:12px;color:var(--text-secondary)">${t("configs.switchModel")}</label>
-          <p class="hint">${t("apps.hotSwitchHint")}</p>
+          <p class="hint">${t("apps.hotSwitchHintPerApp")}</p>
           <div class="actions" style="margin-top:4px;flex-wrap:wrap">
             <select class="select" data-act="gateway-model-select" data-kind="${kind}" style="min-width:160px;flex:1">
               <option value="">${t("configs.selectModel")}</option>
@@ -856,7 +890,9 @@ function renderAppCard(st) {
           </div>
           ${
             active && !isVirtualGatewayModelId(active)
-              ? `<div class="hint" style="margin-top:6px">${t("common.current")}: <code>${escapeHtml(active)}</code></div>`
+              ? `<div class="hint" style="margin-top:6px">${t("common.current")}: <code>${escapeHtml(active)}</code> <span class="tag">${escapeHtml(
+                  t("apps.bindingScope")
+                )}</span></div>`
               : ""
           }
         </div>`;
@@ -916,8 +952,13 @@ function routeStatusClass(status) {
 }
 
 function renderModelsPage() {
-  const virt = activeGateway.virtualModel || "aiSwitchModel";
-  const active = activeGateway.activeModel || "";
+  const bindingSummary = ["chatgpt", "claude", "openclaw", "harness"]
+    .map((k) => {
+      const a = activeByTool[k]?.activeModel || t("common.none");
+      const label = { chatgpt: "ChatGPT", claude: "Claude", openclaw: "OpenClaw", harness: "Harness" }[k];
+      return `${label}: ${a}`;
+    })
+    .join(" · ");
   return `
     <div class="full-page">
       <div class="config-page">
@@ -925,12 +966,8 @@ function renderModelsPage() {
           <div>
             <h2>${t("models.title")}</h2>
             <p>${t("models.desc")} ${t("models.dragHint")}</p>
-            <p class="desc" style="margin-top:6px">
-              ${t("models.hotSwitchHint", {
-                virtual: virt,
-                active: active || t("common.none"),
-              })}
-            </p>
+            <p class="desc" style="margin-top:6px">${t("models.perAppBindings")}</p>
+            <p class="hint" style="margin-top:4px">${escapeHtml(bindingSummary)}</p>
           </div>
           <div class="actions">
             <button class="btn" id="btn-models-refresh" ${modelsLoading ? "disabled" : ""}>
@@ -943,7 +980,10 @@ function renderModelsPage() {
             ? modelGroups
                 .map((g) => {
                   const gid = g.id || g.ID;
-                  const isActive = active && gid === active;
+                  const usedBy = ["chatgpt", "claude", "openclaw", "harness"].filter(
+                    (k) => activeByTool[k]?.activeModel === gid
+                  );
+                  const isActive = usedBy.length > 0;
                   const routes = (g.routes || g.Routes || [])
                     .slice()
                     .sort((a, b) => (a.priority ?? a.Priority ?? 0) - (b.priority ?? b.Priority ?? 0));
@@ -952,14 +992,26 @@ function renderModelsPage() {
               <div class="panel-head">
                 <div>
                   <h3 class="model-id">${escapeHtml(g.name || gid)}
-                    ${isActive ? `<span class="tag default">${t("models.gatewayActive")}</span>` : ""}
+                    ${isActive ? `<span class="tag default">${t("models.inUseByApps")}</span>` : ""}
                   </h3>
-                  <p class="desc">${routes.length} ${t("models.channels")} · ${t("models.virtualPin", { virtual: virt })}</p>
+                  <p class="desc">${routes.length} ${t("models.channels")}${
+                    usedBy.length
+                      ? ` · ${escapeHtml(usedBy.map((k) => ({ chatgpt: "ChatGPT", claude: "Claude", openclaw: "OpenClaw", harness: "Harness" })[k]).join(", "))}`
+                      : ""
+                  }</p>
                 </div>
-                <div class="actions">
-                  <button class="btn btn-sm ${isActive ? "btn-primary" : ""}" data-act="set-active-model" data-model="${escapeAttr(gid)}" ${modelsBusy || isActive ? "disabled" : ""}>
-                    ${isActive ? t("models.isActive") : t("models.setActive")}
-                  </button>
+                <div class="actions" style="flex-wrap:wrap;gap:4px">
+                  ${["chatgpt", "claude", "openclaw", "harness"]
+                    .map((tk) => {
+                      const on = activeByTool[tk]?.activeModel === gid;
+                      const lab = { chatgpt: "ChatGPT", claude: "Claude", openclaw: "OpenClaw", harness: "Harness" }[tk];
+                      return `<button class="btn btn-sm ${on ? "btn-primary" : ""}" data-act="set-active-model" data-tool="${tk}" data-model="${escapeAttr(
+                        gid
+                      )}" ${modelsBusy ? "disabled" : ""} title="${escapeAttr(t("models.setForApp", { app: lab }))}">${
+                        on ? "✓ " : ""
+                      }${lab}</button>`;
+                    })
+                    .join("")}
                 </div>
               </div>
               <div class="panel-body">
@@ -1002,36 +1054,61 @@ function renderModelsPage() {
 }
 
 async function loadActiveGateway() {
-  if (!hasBackend() || typeof GetActiveGatewayModel !== "function") return;
+  if (!hasBackend()) return;
   try {
-    const info = await GetActiveGatewayModel();
-    activeGateway = {
-      virtualModel: info.virtualModel || info.VirtualModel || "aiSwitchModel",
-      activeModel: info.activeModel || info.ActiveModel || "",
-      aliases: info.aliases || info.Aliases || [],
-    };
+    if (typeof ListActiveGatewayModels === "function") {
+      const list = await ListActiveGatewayModels();
+      const next = {};
+      for (const info of list || []) {
+        const kind = (info.kind || info.Kind || "").toLowerCase();
+        if (!kind) continue;
+        next[kind] = {
+          kind,
+          virtualModel: info.virtualModel || info.VirtualModel || "",
+          activeModel: info.activeModel || info.ActiveModel || "",
+        };
+      }
+      activeByTool = next;
+      return;
+    }
+    // fallback: load each tool
+    if (typeof GetActiveGatewayModel === "function") {
+      const next = {};
+      for (const k of ["chatgpt", "claude", "openclaw", "harness"]) {
+        const info = await GetActiveGatewayModel(k);
+        next[k] = {
+          kind: k,
+          virtualModel: info.virtualModel || info.VirtualModel || "",
+          activeModel: info.activeModel || info.ActiveModel || "",
+        };
+      }
+      activeByTool = next;
+    }
   } catch (_) {}
 }
 
-/** Hot-switch proxy routing only — never rewrite tool config files. */
-async function setGatewayActiveModel(modelId) {
+/** Hot-switch one tool's proxy binding only — never rewrite tool config files. */
+async function setGatewayActiveModel(modelId, kind) {
   if (!hasBackend() || typeof SetActiveGatewayModel !== "function") {
     throw new Error(t("toast.runInWailsShort"));
   }
-  const info = await SetActiveGatewayModel(modelId);
-  activeGateway = {
-    virtualModel: info.virtualModel || info.VirtualModel || "aiSwitchModel",
-    activeModel: info.activeModel || info.ActiveModel || modelId,
-    aliases: info.aliases || info.Aliases || [],
+  const toolKey = toolKeyForUI(kind || "chatgpt");
+  const info = await SetActiveGatewayModel(toolKey, modelId);
+  activeByTool = {
+    ...activeByTool,
+    [toolKey]: {
+      kind: toolKey,
+      virtualModel: info.virtualModel || info.VirtualModel || virtualModelForToolUI(toolKey),
+      activeModel: info.activeModel || info.ActiveModel || modelId,
+    },
   };
-  // keep proxy up
   if (typeof EnsureProxyRouting === "function") {
     try {
       const st = await EnsureProxyRouting();
       proxyStatus = normalizeProxyStatus(st);
     } catch (_) {}
   }
-  return activeGateway;
+  return activeByTool[toolKey];
 }
 
 async function loadModelGroups() {
@@ -1056,16 +1133,18 @@ function bindModelsEvents() {
     render();
   });
 
-  // Set as gateway default (hot-switch proxy binding — no config file writes)
+  // Per-app gateway bind (hot-switch; no config file writes)
   document.querySelectorAll("[data-act='set-active-model']").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const mid = btn.dataset.model;
+      const tool = btn.dataset.tool || "chatgpt";
       if (!mid) return;
-      modelsBusy = mid;
+      modelsBusy = mid + ":" + tool;
       render();
       try {
-        await setGatewayActiveModel(mid);
-        toast(t("toast.hotSwitched", { model: mid, virtual: activeGateway.virtualModel || "aiSwitchModel" }));
+        await setGatewayActiveModel(mid, tool);
+        const app = { chatgpt: "ChatGPT", claude: "Claude", openclaw: "OpenClaw", harness: "Harness" }[toolKeyForUI(tool)] || tool;
+        toast(t("toast.hotSwitchedApp", { app, model: mid }));
       } catch (e) {
         toast(errMsg(e), "err");
       } finally {
@@ -2274,8 +2353,12 @@ function bindConfigEvents() {
       configsBusy = kind;
       render();
       try {
-        await setGatewayActiveModel(model);
-        toast(t("toast.hotSwitched", { model, virtual: activeGateway.virtualModel || "aiSwitchModel" }));
+        await setGatewayActiveModel(model, kind);
+        const app =
+          { chatgpt: "ChatGPT", claude: "Claude Code", openclaw: "OpenClaw", harness: "Harness", codex: "ChatGPT" }[
+            toolKeyForUI(kind)
+          ] || kind;
+        toast(t("toast.hotSwitchedApp", { app, model }));
       } catch (e) {
         toast(errMsg(e), "err");
       } finally {
@@ -2614,9 +2697,7 @@ function bindProviderEvents() {
       try {
         await persistProviders();
         // Also bind gateway virtual model → this real model (proxy hot-switch)
-        try {
-          await setGatewayActiveModel(mid);
-        } catch (_) {}
+        // Provider default is catalog default only — do not force all apps to the same model
         toast(t("toast.defaultModel", { id: mid }));
         render();
       } catch (e) {

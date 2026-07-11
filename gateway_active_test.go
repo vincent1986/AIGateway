@@ -8,7 +8,12 @@ import (
 )
 
 func TestIsGatewayVirtualModel(t *testing.T) {
-	for _, id := range []string{"aiSwitchModel", "AISWITCHMODEL", "aigateway", "default", "aigateway/aiSwitchModel"} {
+	for _, id := range []string{
+		"aiSwitchModel", "AISWITCHMODEL", "aigateway", "default",
+		"aiSwitchModel-chatgpt", "aiSwitchModel-claude",
+		"aiSwitchModel-openclaw", "aiSwitchModel-harness",
+		"aigateway/aiSwitchModel-claude",
+	} {
 		if !isGatewayVirtualModel(id) {
 			t.Fatalf("expected virtual: %s", id)
 		}
@@ -20,7 +25,7 @@ func TestIsGatewayVirtualModel(t *testing.T) {
 	}
 }
 
-func TestVirtualModelRoutesToActive(t *testing.T) {
+func TestPerToolActiveModelsIndependent(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 	t.Setenv("USERPROFILE", tmp)
@@ -29,74 +34,78 @@ func TestVirtualModelRoutesToActive(t *testing.T) {
 
 	a := NewApp()
 	useProxy := true
-	_, err := a.UpsertProvider(Provider{
-		ID: "p1", Name: "Demo", BaseURL: "https://api.example.com/v1", APIKey: "sk",
-		UseProxy: &useProxy,
-		Models: []ProviderModel{
-			{ID: "model-a", Name: "A", Enabled: true, IsDefault: true},
-			{ID: "model-b", Name: "B", Enabled: true},
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// clear auto-seeded ollama for cleaner asserts if present
 	_ = a.SaveProviders([]Provider{{
 		ID: "p1", Name: "Demo", BaseURL: "https://api.example.com/v1", APIKey: "sk",
 		UseProxy: &useProxy,
 		Models: []ProviderModel{
 			{ID: "model-a", Name: "A", Enabled: true, IsDefault: true},
 			{ID: "model-b", Name: "B", Enabled: true},
+			{ID: "model-c", Name: "C", Enabled: true},
 		},
 	}})
 
-	info, err := a.SetActiveGatewayModel("model-b")
-	if err != nil {
+	if _, err := a.SetActiveGatewayModel("chatgpt", "model-a"); err != nil {
 		t.Fatal(err)
 	}
-	if info.ActiveModel != "model-b" {
-		t.Fatalf("active=%s", info.ActiveModel)
+	if _, err := a.SetActiveGatewayModel("claude", "model-b"); err != nil {
+		t.Fatal(err)
 	}
-	if info.VirtualModel != gatewayVirtualModel {
-		t.Fatalf("virtual=%s", info.VirtualModel)
+	if _, err := a.SetActiveGatewayModel("openclaw", "model-c"); err != nil {
+		t.Fatal(err)
 	}
 
-	cands, err := resolveRoutesForModel(gatewayVirtualModel)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(cands) == 0 {
-		t.Fatal("no candidates")
-	}
-	if cands[0].UpstreamModel != "model-b" {
-		t.Fatalf("upstream=%s want model-b", cands[0].UpstreamModel)
-	}
-	if cands[0].Provider.BaseURL != "https://api.example.com/v1" {
-		t.Fatalf("base=%s", cands[0].Provider.BaseURL)
-	}
-
-	// switch to model-a without touching configs
-	if _, err := a.SetActiveGatewayModel("model-a"); err != nil {
-		t.Fatal(err)
-	}
-	cands, err = resolveRoutesForModel("aigateway")
+	// chatgpt route
+	cands, err := resolveRoutesForModel(virtualModelForTool("chatgpt"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cands[0].UpstreamModel != "model-a" {
-		t.Fatalf("upstream=%s want model-a", cands[0].UpstreamModel)
+		t.Fatalf("chatgpt up=%s", cands[0].UpstreamModel)
+	}
+	// claude independent
+	cands, err = resolveRoutesForModel(virtualModelForTool("claude"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cands[0].UpstreamModel != "model-b" {
+		t.Fatalf("claude up=%s", cands[0].UpstreamModel)
+	}
+	// openclaw independent
+	cands, err = resolveRoutesForModel("aigateway/" + virtualModelForTool("openclaw"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cands[0].UpstreamModel != "model-c" {
+		t.Fatalf("openclaw up=%s", cands[0].UpstreamModel)
+	}
+
+	// switch claude only — others unchanged
+	if _, err := a.SetActiveGatewayModel("claude", "model-c"); err != nil {
+		t.Fatal(err)
+	}
+	cands, _ = resolveRoutesForModel(virtualModelForTool("chatgpt"))
+	if cands[0].UpstreamModel != "model-a" {
+		t.Fatalf("chatgpt should stay model-a, got %s", cands[0].UpstreamModel)
+	}
+	cands, _ = resolveRoutesForModel(virtualModelForTool("claude"))
+	if cands[0].UpstreamModel != "model-c" {
+		t.Fatalf("claude should be model-c, got %s", cands[0].UpstreamModel)
+	}
+
+	list := a.ListActiveGatewayModels()
+	if len(list) != 4 {
+		t.Fatalf("list len=%d", len(list))
 	}
 }
 
-func TestHandleModelsIncludesVirtual(t *testing.T) {
+func TestHandleModelsIncludesPerToolVirtual(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 	t.Setenv("USERPROFILE", tmp)
 	closeDB()
 	defer closeDB()
 
-	a := NewApp()
-	_, _ = a.UpsertProvider(Provider{
+	_, _ = NewApp().UpsertProvider(Provider{
 		ID: "p1", Name: "Demo", BaseURL: "https://api.example.com/v1", APIKey: "sk",
 		Models: []ProviderModel{{ID: "m1", Name: "M1", Enabled: true}},
 	})
@@ -120,18 +129,25 @@ func TestHandleModelsIncludesVirtual(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		t.Fatal(err)
 	}
-	found := false
+	need := map[string]bool{
+		gatewayVirtualModelChatGPT:  false,
+		gatewayVirtualModelClaude:   false,
+		gatewayVirtualModelOpenClaw: false,
+		gatewayVirtualModelHarness:  false,
+	}
 	for _, d := range out.Data {
-		if d.ID == gatewayVirtualModel {
-			found = true
+		if _, ok := need[d.ID]; ok {
+			need[d.ID] = true
 		}
 	}
-	if !found {
-		t.Fatalf("missing virtual model in list: %+v", out.Data)
+	for id, ok := range need {
+		if !ok {
+			t.Fatalf("missing virtual id %s in %+v", id, out.Data)
+		}
 	}
 }
 
-func TestInjectClaudePinsVirtualModel(t *testing.T) {
+func TestInjectClaudePinsClaudeVirtualModel(t *testing.T) {
 	out, err := injectGatewayClaude(`{}`, "http://127.0.0.1:18080/v1")
 	if err != nil {
 		t.Fatal(err)
@@ -140,11 +156,35 @@ func TestInjectClaudePinsVirtualModel(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &root); err != nil {
 		t.Fatal(err)
 	}
-	if root["model"] != gatewayVirtualModel {
-		t.Fatalf("model=%v", root["model"])
+	want := virtualModelForTool(toolKeyClaude)
+	if root["model"] != want {
+		t.Fatalf("model=%v want %s", root["model"], want)
 	}
 	env := root["env"].(map[string]any)
-	if env["ANTHROPIC_MODEL"] != gatewayVirtualModel {
+	if env["ANTHROPIC_MODEL"] != want {
 		t.Fatalf("ANTHROPIC_MODEL=%v", env["ANTHROPIC_MODEL"])
 	}
+}
+
+func TestInjectCodexPinsChatGPTVirtualModel(t *testing.T) {
+	out, err := injectGatewayCodex("", "http://127.0.0.1:18080/v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := virtualModelForTool(toolKeyChatGPT)
+	if !containsStr(out, `model = "`+want+`"`) {
+		t.Fatalf("missing model pin:\n%s", out)
+	}
+}
+
+func containsStr(s, sub string) bool {
+	return len(s) >= len(sub) && (s == sub || len(sub) == 0 ||
+		(len(s) > 0 && (func() bool {
+			for i := 0; i+len(sub) <= len(s); i++ {
+				if s[i:i+len(sub)] == sub {
+					return true
+				}
+			}
+			return false
+		})()))
 }
