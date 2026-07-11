@@ -1,0 +1,75 @@
+name: Release builds
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      upload_release:
+        description: "Upload artifacts to GitHub Release tag"
+        required: false
+        default: "v1.0.0"
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux-amd64:
+    name: Linux amd64
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ startsWith(github.ref, 'refs/tags/') && github.ref || 'v1.0.0' }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Linux deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libayatana-appindicator3-dev
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.13.0
+
+      - name: Build
+        run: |
+          export PATH="$PATH:$(go env GOPATH)/bin"
+          cd frontend && npm ci && cd ..
+          wails build -platform linux/amd64 -o AI-Switch
+
+      - name: Package tarball
+        run: |
+          mkdir -p dist
+          BIN="build/bin/AI-Switch"
+          test -f "$BIN" || BIN="build/bin/AI Switch"
+          cp "$BIN" dist/AI-Switch
+          chmod +x dist/AI-Switch
+          tar -C dist -czf AI-Switch-v1.0.0-linux-amd64.tar.gz AI-Switch
+          shasum -a 256 AI-Switch-v1.0.0-linux-amd64.tar.gz | tee SHA256SUMS-linux.txt
+          ls -lh AI-Switch-v1.0.0-linux-amd64.tar.gz
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AI-Switch-v1.0.0-linux-amd64
+          path: |
+            AI-Switch-v1.0.0-linux-amd64.tar.gz
+            SHA256SUMS-linux.txt
+
+      - name: Attach to GitHub Release
+        if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event.inputs.upload_release || github.ref_name }}"
+          gh release upload "$TAG" AI-Switch-v1.0.0-linux-amd64.tar.gz --clobber
