@@ -1,101 +1,182 @@
-# AIGateway · 模型管理
+# AIGateway
 
 [![Release](https://img.shields.io/github/v/release/vincent1986/AIGateway)](https://github.com/vincent1986/AIGateway/releases)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-blue)](https://github.com/vincent1986/AIGateway/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**AIGateway** 是一款 **AI 模型管理软件**：把市场上常见 AI 工具用到的模型、厂家与额度统一管起来，帮你 **尽量少花 Token、多发现更便宜的服务商**。
+**English** · **中文** · **日本語** · **Deutsch** · **Tiếng Việt**
 
-适用场景包括（不限于）：
+---
 
-- **Codex** / 各类 CLI / IDE 助手  
-- **ChatGPT** 生态与 OpenAI 兼容接口客户端  
+## English
+
+**AIGateway** is a local **AI model manager and traffic gateway**. It unifies providers, models, and quotas used by popular tools—so you can **spend fewer tokens** and **switch to cheaper vendors** more easily.
+
+### Works with
+
+- **ChatGPT** / **Codex** and OpenAI-compatible clients  
 - **Claude** / **Claude Code**  
-- **OpenClaw**、**Harness** 等工具链与编排场景  
-- 以及其它走 **OpenAI 兼容 API** 的本地或云端工具  
+- **OpenClaw**, **Harness**, and similar toolchains  
+- Any app that speaks **OpenAI-compatible APIs**
 
-**English / 日本語 / Deutsch** release notes: [docs/RELEASE_NOTES_v1.0.0.md](docs/RELEASE_NOTES_v1.0.0.md)  
-**V2 PRD**: [docs/PRD_V2.md](docs/PRD_V2.md) · **验收清单**: [docs/PRD_V2_CHECKLIST.md](docs/PRD_V2_CHECKLIST.md)
+### What you get
 
-## 你能得到什么
+| Goal | How |
+|------|-----|
+| **Save tokens** | Track usage by provider and model; avoid opaque burn |
+| **Find cheaper vendors** | Add many APIs in one place (DeepSeek, SiliconFlow, Qwen, …) and switch anytime |
+| **One setup, many tools** | Point tools once at the local gateway; route models inside AIGateway |
+| **Hot model routing** | Virtual model groups with priority failover (e.g. 429 / quota) |
+
+### Features
+
+- **Providers / Models / Apps / Gateway / Usage** — clear five-tab workspace  
+- **SQLite-backed gateway** — virtual model groups, priority failover, usage stats  
+- **One-click takeover** — ChatGPT, Claude Code, OpenClaw, Harness  
+- **Preset library** — pick a vendor; most cloud providers need only an API key  
+- **OpenAI or Passthrough** format per provider  
+- **Multi-language UI** (popup): Simplified Chinese, Traditional Chinese, English, Japanese, Korean, German, Vietnamese, Thai  
+- **Cross-platform**: macOS, Windows, Linux  
+
+[Download latest release](https://github.com/vincent1986/AIGateway/releases)
+
+---
+
+## 中文
+
+**AIGateway** 是本地 **AI 模型管理与流量网关**。把常见 AI 工具用到的厂家、模型与额度统一管理，帮你 **少花 Token、更容易换到更便宜的服务商**。
+
+### 适用场景
+
+- **ChatGPT** / **Codex** 与 OpenAI 兼容客户端  
+- **Claude** / **Claude Code**  
+- **OpenClaw**、**Harness** 等工具链  
+- 其它使用 **OpenAI 兼容 API** 的应用  
+
+### 你能得到什么
 
 | 目标 | 怎么做到 |
 |------|----------|
-| **省 Token** | 统一看清各厂家用量与套餐剩余；按模型/厂家统计，避免「黑盒烧额度」 |
-| **找更便宜的服务商** | 一处添加多家 API（DeepSeek、通义、智谱、Moonshot、自定义等），随时对比与切换 |
-| **一套模型管多工具** | 把模型写入 Codex / Claude Code 等配置，或经本地兼容网关给任意客户端用 |
-| **随时换模型** | 厂家 → 模型列表 → 一键应用到工具，不用到处改配置 |
+| **省 Token** | 按厂家 / 模型统计用量，避免黑盒烧额度 |
+| **找更便宜服务商** | 一处添加多家 API（DeepSeek、硅基流动、通义等），随时切换 |
+| **一套配置管多工具** | 工具只指向本地网关一次，模型路由在 AIGateway 内完成 |
+| **热切换与容灾** | 虚拟模型组 + 优先级 Failover（如 429 / 额度耗尽） |
 
-## 功能概览
+### 功能概览
 
-- **厂家 / 模型 / 应用 / 统一入口 / Token 统计** 五栏解耦  
-- **SQLite 网关**：虚拟模型组、优先级 Failover、用量统计  
-- **一键接管**：ChatGPT / Claude Code / OpenClaw / Harness  
+- **厂家 / 模型 / 应用 / 统一入口 / Token 统计** 五栏结构  
+- **SQLite 网关**：虚拟模型组、优先级故障转移、用量统计  
+- **一键接管**：ChatGPT、Claude Code、OpenClaw、Harness  
 - **预设库**：点选厂家，云端多数只需 API Key  
-- **多语言（弹窗）**：简中 / 繁中 / 英 / 日 / 韩 / 德 / 越 / 泰  
-- **跨平台**：macOS / Windows / Linux  
+- **OpenAI / 原样转发** 按厂家可选  
+- **多语言界面（弹窗）**：简中、繁中、英、日、韩、德、越、泰  
+- **跨平台**：macOS、Windows、Linux  
 
-## Download
+[下载最新版本](https://github.com/vincent1986/AIGateway/releases)
 
-### v2.0.0（当前）
+---
 
-| Platform | Asset |
-|----------|--------|
-| macOS Apple Silicon | [AIGateway-v2.0.0-macos-arm64.zip](https://github.com/vincent1986/AIGateway/releases/download/v2.0.0/AIGateway-v2.0.0-macos-arm64.zip) |
-| macOS Intel | [AIGateway-v2.0.0-macos-amd64.zip](https://github.com/vincent1986/AIGateway/releases/download/v2.0.0/AIGateway-v2.0.0-macos-amd64.zip) |
-| Windows x64 Setup | [AIGateway-v2.0.0-windows-amd64-setup.exe](https://github.com/vincent1986/AIGateway/releases/download/v2.0.0/AIGateway-v2.0.0-windows-amd64-setup.exe) |
-| Windows x64 Portable | [AIGateway-v2.0.0-windows-amd64-portable.zip](https://github.com/vincent1986/AIGateway/releases/download/v2.0.0/AIGateway-v2.0.0-windows-amd64-portable.zip) |
-| Linux x64 | [AIGateway-v2.0.0-linux-amd64.tar.gz](https://github.com/vincent1986/AIGateway/releases/download/v2.0.0/AIGateway-v2.0.0-linux-amd64.tar.gz) |
+## 日本語
 
-**说明**：[RELEASE_NOTES_v2.0.0.md](docs/RELEASE_NOTES_v2.0.0.md) · **[GitHub Release](https://github.com/vincent1986/AIGateway/releases/tag/v2.0.0)**  
-**V2 PRD**: [PRD_V2.md](docs/PRD_V2.md) · **验收清单**: [PRD_V2_CHECKLIST.md](docs/PRD_V2_CHECKLIST.md)  
-**v1.0.0 归档**: [releases/tag/v1.0.0](https://github.com/vincent1986/AIGateway/releases/tag/v1.0.0)
+**AIGateway** はローカルで動く **AI モデル管理・トラフィックゲートウェイ**です。よく使う AI ツールのプロバイダー・モデル・枠をまとめ、**トークンを節約**し、**より安いサービスへ切り替えやすく**します。
 
-## 开发
+### 対応・連携
 
-```bash
-export PATH="$PATH:$(go env GOPATH)/bin"
-export GOMODCACHE="${GOMODCACHE:-$HOME/.cache/go-mod}"
-wails dev
-```
+- **ChatGPT** / **Codex**、OpenAI 互換クライアント  
+- **Claude** / **Claude Code**  
+- **OpenClaw**・**Harness** など  
+- **OpenAI 互換 API** を使うアプリ全般  
 
-## 数据位置
+### できること
 
-| 内容 | 路径 |
+| 目的 | 方法 |
 |------|------|
-| SQLite 主库 | `~/.codex-manager/aigateway.db` |
-| 厂家 JSON 镜像 | `~/.codex-manager/providers.json` |
-| 配置路径覆盖 | `~/.codex-manager/paths.json` |
-| 默认备份 | `~/.codex-manager/backups/` |
-| 网关配置 | `~/.codex-manager/proxy.json`（默认 `http://127.0.0.1:18080/v1`） |
+| **トークン節約** | プロバイダー / モデル別の使用量を可視化 |
+| **安いベンダー探し** | DeepSeek・SiliconFlow・Qwen などを一括登録して切替 |
+| **一度の設定で多ツール** | ツールはローカルゲートウェイを指すだけ |
+| **ホットルーティング** | 仮想モデルグループと優先度付きフェイルオーバー |
 
-### 给 Codex / 兼容客户端用的统一入口
+### 機能
 
-1. 在「厂家模型」添加多家服务商与模型  
-2. 需要统一 Base URL 时开启「走本地代理」并保存  
-3. 在 Codex / 其它工具里使用：
+- **プロバイダー / モデル / アプリ / ゲートウェイ / 使用量** の 5 タブ  
+- **SQLite ゲートウェイ**：仮想モデル、優先 Failover、統計  
+- **ワンクリック接続**：ChatGPT、Claude Code、OpenClaw、Harness  
+- **プリセット**：クラウドは API Key だけで追加できることが多い  
+- **OpenAI / パススルー** 形式  
+- **多言語 UI**（ポップアップ）  
+- **macOS / Windows / Linux**  
 
-```toml
-model = "deepseek-chat"          # 必须是已启用模型 ID
-model_provider = "codex_proxy"
+[最新リリースをダウンロード](https://github.com/vincent1986/AIGateway/releases)
 
-[model_providers.codex_proxy]
-name = "OpenAI Proxy"
-base_url = "http://127.0.0.1:18080/v1"
-env_key = "codex_proxy_api_key"
-```
+---
 
-这样即可在 **不改工具协议** 的前提下，把流量切到更便宜的厂家模型。
+## Deutsch
 
-## 构建
+**AIGateway** ist ein lokales **KI-Modellmanagement und Traffic-Gateway**. Es bündelt Anbieter, Modelle und Kontingente gängiger Tools—damit Sie **weniger Tokens verbrauchen** und **günstigere Anbieter** leichter nutzen können.
 
-```bash
-wails build
-wails build -platform darwin/arm64
-wails build -platform windows/amd64 -nsis
-wails build -platform linux/amd64   # Linux 主机 / CI
-```
+### Geeignet für
 
-详见 [docs/RELEASE_NOTES_v1.0.0.md](docs/RELEASE_NOTES_v1.0.0.md)。
+- **ChatGPT** / **Codex** und OpenAI-kompatible Clients  
+- **Claude** / **Claude Code**  
+- **OpenClaw**, **Harness** und ähnliche Toolchains  
+- Apps mit **OpenAI-kompatibler API**  
+
+### Nutzen
+
+| Ziel | Umsetzung |
+|------|-----------|
+| **Tokens sparen** | Nutzung nach Anbieter/Modell sichtbar machen |
+| **Günstigere Anbieter** | Viele APIs an einem Ort (DeepSeek, SiliconFlow, Qwen, …) |
+| **Einmal einrichten** | Tools zeigen nur auf das lokale Gateway |
+| **Hot Routing** | Virtuelle Modellgruppen mit Prioritäts-Failover |
+
+### Funktionen
+
+- Fünf Bereiche: **Anbieter / Modelle / Apps / Gateway / Nutzung**  
+- **SQLite-Gateway** mit Failover und Statistiken  
+- **Ein-Klick-Übernahme** für ChatGPT, Claude Code, OpenClaw, Harness  
+- **Presets** — oft nur API-Key nötig  
+- **OpenAI- oder Passthrough-Format**  
+- **Mehrsprachige UI** (Popup)  
+- **macOS, Windows, Linux**  
+
+[Neueste Version herunterladen](https://github.com/vincent1986/AIGateway/releases)
+
+---
+
+## Tiếng Việt
+
+**AIGateway** là **cổng quản lý mô hình AI và lưu lượng cục bộ**. Gom nhà cung cấp, mô hình và hạn mức cho các công cụ phổ biến—giúp **tiết kiệm token** và **chuyển sang dịch vụ rẻ hơn** dễ dàng hơn.
+
+### Phù hợp với
+
+- **ChatGPT** / **Codex** và client tương thích OpenAI  
+- **Claude** / **Claude Code**  
+- **OpenClaw**, **Harness**  
+- Ứng dụng dùng **API tương thích OpenAI**  
+
+### Lợi ích
+
+| Mục tiêu | Cách làm |
+|----------|----------|
+| **Tiết kiệm token** | Theo dõi dùng theo nhà cung cấp / mô hình |
+| **Tìm dịch vụ rẻ hơn** | Thêm nhiều API (DeepSeek, SiliconFlow, Qwen, …) và chuyển nhanh |
+| **Cấu hình một lần** | Công cụ chỉ trỏ về gateway cục bộ |
+| **Định tuyến linh hoạt** | Nhóm mô hình ảo + failover theo ưu tiên |
+
+### Tính năng
+
+- Năm tab: **Nhà cung cấp / Mô hình / Ứng dụng / Gateway / Thống kê**  
+- **Gateway SQLite**, failover, thống kê token  
+- **Kết nối một chạm**: ChatGPT, Claude Code, OpenClaw, Harness  
+- **Thư viện preset** — cloud thường chỉ cần API Key  
+- **Định dạng OpenAI hoặc Passthrough**  
+- **Giao diện đa ngôn ngữ** (popup)  
+- **macOS, Windows, Linux**  
+
+[Tải bản phát hành mới nhất](https://github.com/vincent1986/AIGateway/releases)
+
+---
 
 ## Team
 
