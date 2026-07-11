@@ -13,17 +13,27 @@
 
 ### 简介
 
-**AI Switch** 是面向 **Codex** 与 **Claude Code** 的多厂家 AI 模型管理桌面应用（Wails + Go）。统一管理 API 厂家、模型列表、本地配置文件与 OpenAI 兼容代理，并支持 Token 套餐与用量统计。
+**AI Switch** 是一款 **AI 模型管理软件**（Wails + Go）：帮你把市场上常见 AI 工具用到的模型、厂家与额度统一管理起来，**尽量节约 Token，并更容易发现更便宜的 Token 服务商**。
+
+可配合的工具与场景包括（不限于）：
+
+- **Codex**、各类 CLI / IDE 助手  
+- **ChatGPT** 生态与 OpenAI 兼容客户端  
+- **Claude** / **Claude Code**  
+- **OpenClaw**、**Harness** 等工具链 / 编排  
+- 其它使用 **OpenAI 兼容 API** 的本地或云端应用  
+
+核心思路：多厂家并列接入 → 一处切换模型 → 可选统一网关给工具用 → 套餐与用量一目了然，避免「黑盒烧额度」。
 
 ### 主要功能
 
-- **厂家模型**：名称 / API Base URL / API Key；测试连接；自动拉取 `/models`；启用/禁用/默认模型
-- **配置文件**：Codex / Claude Code 自动搜索、手动选择、备份与还原、一键切换模型
-- **代理服务**：本地 OpenAI 兼容网关（默认 `http://127.0.0.1:18080/v1`），按 model 路由到各厂家并自动附带对应 Key
-- **Token 套餐**：按厂家管理购买额度（总量、偏移已用、有效期），结合代理统计估算剩余
-- **Token 统计**：经本地代理转发的请求用量（按模型 / 厂家 / 日 / 最近记录）
-- **多语言**：界面支持中文 / English，顶栏切换，偏好保存在本机
-- **跨平台**：macOS / Windows（Linux 见下方下载说明）
+- **厂家模型**：名称 / API Base URL / API Key；测试连接；拉取 `/models`；启用/禁用/默认模型；预设与自定义服务商  
+- **工具配置**：Codex / Claude Code 等配置自动搜索、备份还原、一键切换模型  
+- **统一入口（可选）**：本地 OpenAI 兼容网关（默认 `http://127.0.0.1:18080/v1`），按 model 路由到各厂家，方便 ChatGPT 兼容客户端与多工具接入  
+- **省 Token**：按厂家管理 Token 套餐（总量、偏移、有效期）+ 代理链路用量统计（模型 / 厂家 / 日），看清花在哪、还剩多少  
+- **多服务商对比**：同一界面管理多家 API，随时换到更便宜的模型/线路  
+- **多语言**：界面中文 / English；本说明另含日文、德文  
+- **跨平台**：macOS / Windows / Linux
 
 ### 系统要求
 
@@ -122,17 +132,25 @@ wails build -platform linux/amd64   # 请在 Linux 主机或 CI 中构建
 
 ### Overview
 
-**AI Switch** is a desktop multi-provider AI model manager for **Codex** and **Claude Code** (Wails + Go). Manage vendors, model lists, local tool configs, and an OpenAI-compatible local proxy, with token packages and usage stats.
+**AI Switch** is a desktop **AI model management** app (Wails + Go). It unifies providers, models, and quotas used by popular market tools—so you can **spend fewer tokens** and **discover cheaper token vendors** more easily.
+
+Works with (not limited to):
+
+- **Codex** and other CLI / IDE assistants  
+- **ChatGPT** ecosystem / OpenAI-compatible clients  
+- **Claude** / **Claude Code**  
+- **OpenClaw**, **Harness**, and similar toolchains  
+- Any app that speaks **OpenAI-compatible APIs**  
 
 ### Features
 
-- **Providers**: name / API Base URL / API Key; connection test; fetch `/models`; enable/disable/default models  
-- **Configs**: auto-scan Codex / Claude Code, pick files, backup/restore, one-click model switch  
-- **Proxy**: local OpenAI-compatible gateway (default `http://127.0.0.1:18080/v1`), route by model ID with the matching key  
-- **Token packages**: per-vendor quota plans; remaining estimate = offset + proxy-tracked usage  
-- **Usage stats**: requests via the local proxy (by model / provider / day / recent)  
-- **i18n**: Chinese / English UI; preference stored locally  
-- **Platforms**: macOS / Windows (Linux: see downloads)
+- **Providers & models**: Base URL / API Key, connection test, fetch `/models`, enable/disable/default; presets + custom vendors  
+- **Tool configs**: Codex / Claude Code scan, backup/restore, one-click model switch  
+- **Optional unified gateway**: local OpenAI-compatible proxy (default `http://127.0.0.1:18080/v1`) so many tools share one base URL while routing to cheaper backends  
+- **Save tokens**: package quotas + usage by model/provider/day—see where tokens go and how much remains  
+- **Compare vendors**: keep multiple APIs side by side and switch when a cheaper route appears  
+- **i18n**: Chinese / English UI  
+- **Platforms**: macOS / Windows / Linux
 
 ### System requirements
 
@@ -211,17 +229,25 @@ wails build -platform linux/amd64   # on Linux host or CI
 
 ### 概要
 
-**AI Switch** は **Codex** / **Claude Code** 向けのマルチプロバイダー AI モデル管理デスクトップアプリ（Wails + Go）です。ベンダー設定、モデル一覧、ローカル設定ファイル、OpenAI 互換プロキシ、トークン枠と利用量を一括管理します。
+**AI Switch** は **AI モデル管理** デスクトップアプリ（Wails + Go）です。市場で使われる各種 AI ツール向けに、モデル・ベンダー・枠をまとめて管理し、**Token を節約**し、**より安い Token サービス**を見つけやすくします。
+
+対応・連携例（限定ではありません）：
+
+- **Codex** / CLI・IDE アシスタント  
+- **ChatGPT** 系・OpenAI 互換クライアント  
+- **Claude** / **Claude Code**  
+- **OpenClaw**・**Harness** などツールチェーン  
+- その他 **OpenAI 互換 API** を使うアプリ  
 
 ### 主な機能
 
-- **プロバイダー**：名称 / API Base URL / API Key、接続テスト、`/models` 取得、有効/無効/デフォルト  
-- **設定ファイル**：Codex / Claude Code の自動検索・手動選択・バックアップ/復元・モデル切替  
-- **プロキシ**：ローカル OpenAI 互換ゲートウェイ（既定 `http://127.0.0.1:18080/v1`）、model でルーティング  
-- **トークンパッケージ**：ベンダーごとの枠管理（オフセット＋プロキシ計測で残量概算）  
-- **利用統計**：プロキシ経由のリクエスト集計  
-- **多言語 UI**：中国語 / 英語（本リリースノートは日・独も記載）  
-- **対応 OS**：macOS / Windows（Linux はアセット参照）
+- **プロバイダー / モデル**：API 設定、接続テスト、`/models` 取得、有効化とデフォルト  
+- **ツール設定**：Codex / Claude Code の検索・バックアップ・モデル切替  
+- **任意の統一入口**：ローカル OpenAI 互換プロキシで複数ツールを安いバックエンドへ  
+- **Token 節約**：パッケージ枠＋利用統計で「どこで使ったか」「残りはいくらか」を可視化  
+- **複数ベンダー比較**：同一 UI で切替  
+- **UI 言語**：中国語 / 英語  
+- **OS**：macOS / Windows / Linux
 
 ### 必要環境
 
@@ -270,17 +296,25 @@ wails build -platform linux/amd64   # on Linux host or CI
 
 ### Überblick
 
-**AI Switch** ist eine Desktop-Anwendung zur Verwaltung mehrerer AI-Anbieter für **Codex** und **Claude Code** (Wails + Go). Sie verwaltet Anbieter, Modelllisten, lokale Konfigurationsdateien und einen OpenAI-kompatiblen lokalen Proxy sowie Token-Pakete und Nutzungsstatistiken.
+**AI Switch** ist eine Desktop-**Modellverwaltungs**-App (Wails + Go). Sie bündelt Modelle, Anbieter und Kontingente für gängige AI-Tools—damit Sie **Tokens sparen** und **günstigere Token-Anbieter** leichter finden.
+
+Unterstützte / typische Werkzeuge (nicht abschließend):
+
+- **Codex** und andere CLI-/IDE-Assistenten  
+- **ChatGPT**-Ökosystem / OpenAI-kompatible Clients  
+- **Claude** / **Claude Code**  
+- **OpenClaw**, **Harness** und ähnliche Toolchains  
+- Weitere Apps mit **OpenAI-kompatibler API**  
 
 ### Funktionen
 
-- **Anbieter**: Name / API Base URL / API Key; Verbindungstest; Abruf von `/models`; Aktivieren/Deaktivieren/Standardmodell  
-- **Konfigurationen**: Auto-Suche für Codex / Claude Code, manuelle Auswahl, Backup/Wiederherstellung, Modellwechsel  
-- **Proxy**: lokales OpenAI-kompatibles Gateway (Standard `http://127.0.0.1:18080/v1`), Routing nach Model-ID  
-- **Token-Pakete**: Kontingente pro Anbieter; Rest = manueller Offset + Proxy-Nutzung  
-- **Statistik**: Anfragen über den lokalen Proxy (nach Modell / Anbieter / Tag)  
-- **UI-Sprachen**: Chinesisch / Englisch (diese Notes zusätzlich ja/de)  
-- **Plattformen**: macOS / Windows (Linux siehe Downloads)
+- **Anbieter & Modelle**: API-Setup, Test, `/models`, Aktivierung/Standard  
+- **Tool-Configs**: Codex / Claude Code Suche, Backup, Modellwechsel  
+- **Optional einheitlicher Eingang**: lokaler OpenAI-kompatibler Proxy für viele Clients  
+- **Tokens sparen**: Pakete + Nutzung nach Modell/Anbieter/Tag  
+- **Anbieter vergleichen**: mehrere APIs parallel, schnell umschalten  
+- **UI**: Chinesisch / Englisch  
+- **Plattformen**: macOS / Windows / Linux
 
 ### Systemvoraussetzungen
 

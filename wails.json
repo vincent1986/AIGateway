@@ -15,6 +15,6 @@
     "productName": "AI Switch",
     "productVersion": "2.0.0-dev",
     "copyright": "Copyright © 2026",
-    "comments": "Multi-provider AI model switcher for Codex & Claude Code"
+    "comments": "AI model manager for Codex, ChatGPT, Claude, OpenClaw, Harness — save tokens, find cheaper providers"
   }
 }

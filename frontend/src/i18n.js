@@ -5,10 +5,10 @@ export const SUPPORTED = ["zh", "en"];
 
 const dict = {
   zh: {
-    "brand.sub": "模型管理",
+    "brand.sub": "省 Token · 多工具",
     "nav.providers": "厂家模型",
     "nav.configs": "配置文件",
-    "nav.proxy": "代理服务",
+    "nav.proxy": "统一入口",
     "nav.usage": "Token 统计",
     "stat.providers": "厂家",
     "stat.models": "模型",
@@ -114,8 +114,8 @@ const dict = {
     "confirm.deletePkg": "确定删除该套餐？",
     "confirm.deleteProvider": "确定删除厂家「{name}」及其模型？",
 
-    "proxy.title": "OpenAI 兼容代理",
-    "proxy.desc": "本地统一入口：客户端按标准 OpenAI 协议访问，代理按模型路由到各厂家 API（自动带上对应 Key）。",
+    "proxy.title": "统一入口（OpenAI 兼容）",
+    "proxy.desc": "给 Codex / ChatGPT 兼容客户端 / Claude 工具链等提供同一 Base URL；按模型路由到更便宜的厂家，帮你省 Token。",
     "proxy.stop": "停止代理",
     "proxy.start": "启动代理",
     "proxy.refresh": "刷新状态",
@@ -270,7 +270,7 @@ const dict = {
     "test.errorDetail": "错误详情",
 
     "usage.title": "Token 使用统计",
-    "usage.desc": "统计经本地代理转发的请求用量（输入 / 输出 / 合计）。仅记录代理链路，直连 Ollama 不经过代理则不计入。",
+    "usage.desc": "看清 Token 花在哪：经统一入口转发的用量（输入 / 输出 / 合计）。便于对比服务商、控制开销；直连本机服务不经入口则不计入。",
     "usage.refresh": "刷新",
     "usage.clear": "清空统计",
     "usage.calls": "请求次数",
@@ -315,10 +315,10 @@ const dict = {
   },
 
   en: {
-    "brand.sub": "Models",
+    "brand.sub": "Save tokens · multi-tool",
     "nav.providers": "Providers",
     "nav.configs": "Configs",
-    "nav.proxy": "Proxy",
+    "nav.proxy": "Gateway",
     "nav.usage": "Token Usage",
     "stat.providers": "Providers",
     "stat.models": "Models",
@@ -424,8 +424,8 @@ const dict = {
     "confirm.deletePkg": "Delete this package?",
     "confirm.deleteProvider": "Delete provider “{name}” and its models?",
 
-    "proxy.title": "OpenAI-compatible proxy",
-    "proxy.desc": "Local gateway: clients use standard OpenAI APIs; the proxy routes by model to each provider (with the matching key).",
+    "proxy.title": "Unified gateway (OpenAI-compatible)",
+    "proxy.desc": "One Base URL for Codex, ChatGPT-compatible clients, Claude toolchains, and more. Route by model to cheaper vendors to save tokens.",
     "proxy.stop": "Stop proxy",
     "proxy.start": "Start proxy",
     "proxy.refresh": "Refresh status",
@@ -580,7 +580,7 @@ const dict = {
     "test.errorDetail": "Error detail",
 
     "usage.title": "Token usage",
-    "usage.desc": "Usage for requests via the local proxy (input / output / total). Direct Ollama traffic is not counted.",
+    "usage.desc": "See where tokens go: usage via the unified gateway (input / output / total). Compare vendors and control spend. Direct local traffic is not counted.",
     "usage.refresh": "Refresh",
     "usage.clear": "Clear stats",
     "usage.calls": "Requests",

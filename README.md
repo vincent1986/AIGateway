@@ -3,18 +3,35 @@
 [![Release](https://img.shields.io/github/v/release/vincent1986/ai-switch)](https://github.com/vincent1986/ai-switch/releases)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-blue)](https://github.com/vincent1986/ai-switch/releases)
 
-多厂家多模型管理桌面应用（Wails + Go），面向 **Codex** / **Claude Code**。
+**AI Switch** 是一款 **AI 模型管理软件**：把市场上常见 AI 工具用到的模型、厂家与额度统一管起来，帮你 **尽量少花 Token、多发现更便宜的服务商**。
+
+适用场景包括（不限于）：
+
+- **Codex** / 各类 CLI / IDE 助手  
+- **ChatGPT** 生态与 OpenAI 兼容接口客户端  
+- **Claude** / **Claude Code**  
+- **OpenClaw**、**Harness** 等工具链与编排场景  
+- 以及其它走 **OpenAI 兼容 API** 的本地或云端工具  
 
 **English / 日本語 / Deutsch** release notes: [docs/RELEASE_NOTES_v1.0.0.md](docs/RELEASE_NOTES_v1.0.0.md)
 
-## Features
+## 你能得到什么
 
-- **厂家模型**：名称 / API Base URL / API Key，测试连接，自动拉取 `/models`
-- **配置文件**：Codex / Claude Code 自动搜索、手动选择、备份还原、切换模型
-- **代理服务**：本地 OpenAI 兼容网关，按 model 路由到各厂家（标准 OpenAI 协议出入）
-- **Token 套餐 / 统计**：额度管理与代理链路用量
-- **多语言 UI**：中文 / English
-- **跨平台**：macOS / Windows / Linux
+| 目标 | 怎么做到 |
+|------|----------|
+| **省 Token** | 统一看清各厂家用量与套餐剩余；按模型/厂家统计，避免「黑盒烧额度」 |
+| **找更便宜的服务商** | 一处添加多家 API（DeepSeek、通义、智谱、Moonshot、自定义等），随时对比与切换 |
+| **一套模型管多工具** | 把模型写入 Codex / Claude Code 等配置，或经本地兼容网关给任意客户端用 |
+| **随时换模型** | 厂家 → 模型列表 → 一键应用到工具，不用到处改配置 |
+
+## 功能概览
+
+- **厂家与模型**：API Base URL / Key，测试连接，拉取 `/models`，启用/禁用/默认模型  
+- **工具配置**：Codex / Claude Code 等配置文件自动搜索、备份还原、切换模型  
+- **统一入口（可选）**：本地 OpenAI 兼容代理，按 model 路由到真实厂家，方便 ChatGPT 兼容客户端与工具链接入  
+- **Token 套餐与统计**：额度计划 + 代理链路用量，帮你算清楚「还剩多少、花在哪」  
+- **多语言 UI**：中文 / English  
+- **跨平台**：macOS / Windows / Linux  
 
 ## Download v1.0.0
 
@@ -45,11 +62,11 @@ wails dev
 | 默认备份 | `~/.codex-manager/backups/{codex,claude}/` |
 | 代理配置 | `~/.codex-manager/proxy.json`（默认 `http://127.0.0.1:18080/v1`） |
 
-### 代理用法
+### 给 Codex / 兼容客户端用的统一入口
 
-1. 在「厂家模型」配置好各厂家 API 与模型  
-2. 「代理服务」→ 启动  
-3. 客户端 / Codex 使用：
+1. 在「厂家模型」添加多家服务商与模型  
+2. 需要统一 Base URL 时开启「走本地代理」并保存  
+3. 在 Codex / 其它工具里使用：
 
 ```toml
 model = "deepseek-chat"          # 必须是已启用模型 ID
@@ -61,26 +78,18 @@ base_url = "http://127.0.0.1:18080/v1"
 env_key = "codex_proxy_api_key"
 ```
 
-或在代理页点击「写入 Codex 配置」。
+这样即可在 **不改工具协议** 的前提下，把流量切到更便宜的厂家模型。
 
 ## 构建
 
 ```bash
-# 当前平台
 wails build
-
-# macOS
 wails build -platform darwin/arm64
-wails build -platform darwin/amd64
-
-# Windows（可生成 NSIS 安装包）
 wails build -platform windows/amd64 -nsis
-
-# Linux（请在 Linux 主机、Docker 或 GitHub Actions 中构建）
-wails build -platform linux/amd64
+wails build -platform linux/amd64   # Linux 主机 / CI
 ```
 
-打包产物建议输出到 `dist/release/vX.Y.Z/`。详细说明见 [docs/RELEASE_NOTES_v1.0.0.md](docs/RELEASE_NOTES_v1.0.0.md)。
+详见 [docs/RELEASE_NOTES_v1.0.0.md](docs/RELEASE_NOTES_v1.0.0.md)。
 
 ## License
 
