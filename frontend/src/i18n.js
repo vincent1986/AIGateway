@@ -1,4 +1,4 @@
-/** Lightweight i18n for AI Switch (zh / en). No external deps. */
+/** Lightweight i18n for AIGateway (zh / en). No external deps. */
 
 export const LOCALE_KEY = "codex.ui.locale";
 export const SUPPORTED = ["zh", "en"];

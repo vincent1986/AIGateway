@@ -45,25 +45,25 @@ jobs:
         run: |
           export PATH="$PATH:$(go env GOPATH)/bin"
           cd frontend && npm ci && cd ..
-          wails build -platform linux/amd64 -o AI-Switch
+          wails build -platform linux/amd64 -o AIGateway
 
       - name: Package tarball
         run: |
           mkdir -p dist
-          BIN="build/bin/AI-Switch"
-          test -f "$BIN" || BIN="build/bin/AI Switch"
-          cp "$BIN" dist/AI-Switch
-          chmod +x dist/AI-Switch
-          tar -C dist -czf AI-Switch-v1.0.0-linux-amd64.tar.gz AI-Switch
-          shasum -a 256 AI-Switch-v1.0.0-linux-amd64.tar.gz | tee SHA256SUMS-linux.txt
-          ls -lh AI-Switch-v1.0.0-linux-amd64.tar.gz
+          BIN="build/bin/AIGateway"
+          test -f "$BIN" || BIN="build/bin/AIGateway"
+          cp "$BIN" dist/AIGateway
+          chmod +x dist/AIGateway
+          tar -C dist -czf AIGateway-v1.0.0-linux-amd64.tar.gz AIGateway
+          shasum -a 256 AIGateway-v1.0.0-linux-amd64.tar.gz | tee SHA256SUMS-linux.txt
+          ls -lh AIGateway-v1.0.0-linux-amd64.tar.gz
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AI-Switch-v1.0.0-linux-amd64
+          name: AIGateway-v1.0.0-linux-amd64
           path: |
-            AI-Switch-v1.0.0-linux-amd64.tar.gz
+            AIGateway-v1.0.0-linux-amd64.tar.gz
             SHA256SUMS-linux.txt
 
       - name: Attach to GitHub Release
@@ -72,4 +72,4 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ github.event.inputs.upload_release || github.ref_name }}"
-          gh release upload "$TAG" AI-Switch-v1.0.0-linux-amd64.tar.gz --clobber
+          gh release upload "$TAG" AIGateway-v1.0.0-linux-amd64.tar.gz --clobber

@@ -466,9 +466,9 @@ function render() {
     <header class="topbar">
       <div class="topbar-left">
         <div class="brand">
-          <div class="brand-mark">AI</div>
+          <div class="brand-mark">AG</div>
           <div>
-            <div class="brand-title">AI Switch <span class="brand-sub">${t("brand.sub")}</span></div>
+            <div class="brand-title">AIGateway <span class="brand-sub">${t("brand.sub")}</span></div>
           </div>
         </div>
         <nav class="nav-tabs">

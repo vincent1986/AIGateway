@@ -1,9 +1,9 @@
-# AI Switch · 模型管理
+# AIGateway · 模型管理
 
-[![Release](https://img.shields.io/github/v/release/vincent1986/ai-switch)](https://github.com/vincent1986/ai-switch/releases)
-[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-blue)](https://github.com/vincent1986/ai-switch/releases)
+[![Release](https://img.shields.io/github/v/release/vincent1986/AIGateway)](https://github.com/vincent1986/AIGateway/releases)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-blue)](https://github.com/vincent1986/AIGateway/releases)
 
-**AI Switch** 是一款 **AI 模型管理软件**：把市场上常见 AI 工具用到的模型、厂家与额度统一管起来，帮你 **尽量少花 Token、多发现更便宜的服务商**。
+**AIGateway** 是一款 **AI 模型管理软件**：把市场上常见 AI 工具用到的模型、厂家与额度统一管起来，帮你 **尽量少花 Token、多发现更便宜的服务商**。
 
 适用场景包括（不限于）：
 
@@ -37,13 +37,13 @@
 
 | Platform | Asset |
 |----------|--------|
-| macOS Apple Silicon | [AI-Switch-v1.0.0-macos-arm64.zip](https://github.com/vincent1986/ai-switch/releases/download/v1.0.0/AI-Switch-v1.0.0-macos-arm64.zip) |
-| macOS Intel | [AI-Switch-v1.0.0-macos-amd64.zip](https://github.com/vincent1986/ai-switch/releases/download/v1.0.0/AI-Switch-v1.0.0-macos-amd64.zip) |
-| Windows x64 Setup | [AI-Switch-v1.0.0-windows-amd64-setup.exe](https://github.com/vincent1986/ai-switch/releases/download/v1.0.0/AI-Switch-v1.0.0-windows-amd64-setup.exe) |
-| Windows x64 Portable | [AI-Switch-v1.0.0-windows-amd64-portable.zip](https://github.com/vincent1986/ai-switch/releases/download/v1.0.0/AI-Switch-v1.0.0-windows-amd64-portable.zip) |
-| Linux x64 | [AI-Switch-v1.0.0-linux-amd64.tar.gz](https://github.com/vincent1986/ai-switch/releases/download/v1.0.0/AI-Switch-v1.0.0-linux-amd64.tar.gz) |
+| macOS Apple Silicon | [AIGateway-v1.0.0-macos-arm64.zip](https://github.com/vincent1986/AIGateway/releases/download/v1.0.0/AIGateway-v1.0.0-macos-arm64.zip) |
+| macOS Intel | [AIGateway-v1.0.0-macos-amd64.zip](https://github.com/vincent1986/AIGateway/releases/download/v1.0.0/AIGateway-v1.0.0-macos-amd64.zip) |
+| Windows x64 Setup | [AIGateway-v1.0.0-windows-amd64-setup.exe](https://github.com/vincent1986/AIGateway/releases/download/v1.0.0/AIGateway-v1.0.0-windows-amd64-setup.exe) |
+| Windows x64 Portable | [AIGateway-v1.0.0-windows-amd64-portable.zip](https://github.com/vincent1986/AIGateway/releases/download/v1.0.0/AIGateway-v1.0.0-windows-amd64-portable.zip) |
+| Linux x64 | [AIGateway-v1.0.0-linux-amd64.tar.gz](https://github.com/vincent1986/AIGateway/releases/download/v1.0.0/AIGateway-v1.0.0-linux-amd64.tar.gz) |
 
-Full install guide (zh / en / ja / de): **[Release Notes](docs/RELEASE_NOTES_v1.0.0.md)** · **[GitHub Release](https://github.com/vincent1986/ai-switch/releases/tag/v1.0.0)**
+Full install guide (zh / en / ja / de): **[Release Notes](docs/RELEASE_NOTES_v1.0.0.md)** · **[GitHub Release](https://github.com/vincent1986/AIGateway/releases/tag/v1.0.0)**
 
 ## 开发
 

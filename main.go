@@ -18,7 +18,7 @@ func main() {
 	// Window sizes describe the client content area. Frontend CSS fills 100% of
 	// that area (not screen 100vh) so layout matches init size and resizes cleanly.
 	err := wails.Run(&options.App{
-		Title:            "AI Switch",
+		Title:            "AIGateway",
 		Width:            1180,
 		Height:           780,
 		MinWidth:         640,

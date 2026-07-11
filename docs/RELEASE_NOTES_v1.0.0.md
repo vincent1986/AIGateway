@@ -1,11 +1,11 @@
-# AI Switch v1.0.0 Release Notes
+# AIGateway v1.0.0 Release Notes
 
 | | |
 |---|---|
 | **Version** | 1.0.0 |
 | **Tag** | `v1.0.0` |
-| **Repository** | https://github.com/vincent1986/ai-switch |
-| **Release** | https://github.com/vincent1986/ai-switch/releases/tag/v1.0.0 |
+| **Repository** | https://github.com/vincent1986/AIGateway |
+| **Release** | https://github.com/vincent1986/AIGateway/releases/tag/v1.0.0 |
 
 ---
 
@@ -13,7 +13,7 @@
 
 ### 简介
 
-**AI Switch** 是一款 **AI 模型管理软件**（Wails + Go）：帮你把市场上常见 AI 工具用到的模型、厂家与额度统一管理起来，**尽量节约 Token，并更容易发现更便宜的 Token 服务商**。
+**AIGateway** 是一款 **AI 模型管理软件**（Wails + Go）：帮你把市场上常见 AI 工具用到的模型、厂家与额度统一管理起来，**尽量节约 Token，并更容易发现更便宜的 Token 服务商**。
 
 可配合的工具与场景包括（不限于）：
 
@@ -48,30 +48,30 @@
 
 | 文件 | 平台 | 说明 |
 |------|------|------|
-| `AI-Switch-v1.0.0-macos-arm64.zip` | macOS Apple Silicon | 解压后得到 `AI Switch.app` |
-| `AI-Switch-v1.0.0-macos-amd64.zip` | macOS Intel | 解压后得到 `AI Switch.app` |
-| `AI-Switch-v1.0.0-windows-amd64-setup.exe` | Windows x64 | NSIS 安装程序（推荐） |
-| `AI-Switch-v1.0.0-windows-amd64-portable.zip` | Windows x64 | 绿色免安装可执行文件 |
-| `AI-Switch-v1.0.0-linux-amd64.tar.gz` | Linux x64 | 解压后运行二进制（由 CI 构建上传） |
+| `AIGateway-v1.0.0-macos-arm64.zip` | macOS Apple Silicon | 解压后得到 `AIGateway.app` |
+| `AIGateway-v1.0.0-macos-amd64.zip` | macOS Intel | 解压后得到 `AIGateway.app` |
+| `AIGateway-v1.0.0-windows-amd64-setup.exe` | Windows x64 | NSIS 安装程序（推荐） |
+| `AIGateway-v1.0.0-windows-amd64-portable.zip` | Windows x64 | 绿色免安装可执行文件 |
+| `AIGateway-v1.0.0-linux-amd64.tar.gz` | Linux x64 | 解压后运行二进制（由 CI 构建上传） |
 | `SHA256SUMS.txt` | 全部 | SHA-256 校验和 |
 
 #### macOS
 
 1. 下载对应芯片架构的 zip 并解压  
-2. 将 `AI Switch.app` 拖入「应用程序」  
+2. 将 `AIGateway.app` 拖入「应用程序」  
 3. 首次打开若提示未验证开发者：系统设置 → 隐私与安全性 → 仍要打开  
-4. 或在终端：`xattr -cr "/Applications/AI Switch.app"`
+4. 或在终端：`xattr -cr "/Applications/AIGateway.app"`
 
 #### Windows
 
-1. **推荐**：运行 `AI-Switch-v1.0.0-windows-amd64-setup.exe` 按向导安装  
-2. 或解压 portable zip，直接运行 `AI-Switch-v1.0.0-windows-amd64.exe`  
+1. **推荐**：运行 `AIGateway-v1.0.0-windows-amd64-setup.exe` 按向导安装  
+2. 或解压 portable zip，直接运行 `AIGateway-v1.0.0-windows-amd64.exe`  
 3. 若无法启动，请安装 [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)
 
 #### Linux
 
-1. 下载 `AI-Switch-v1.0.0-linux-amd64.tar.gz` 并解压  
-2. `chmod +x AI-Switch && ./AI-Switch`  
+1. 下载 `AIGateway-v1.0.0-linux-amd64.tar.gz` 并解压  
+2. `chmod +x AIGateway && ./AIGateway`  
 3. 依赖示例（Debian/Ubuntu）：`libgtk-3-0`、`libwebkit2gtk-4.0-37` 或发行版对应的 WebKitGTK 包  
 
 ### 快速开始
@@ -132,7 +132,7 @@ wails build -platform linux/amd64   # 请在 Linux 主机或 CI 中构建
 
 ### Overview
 
-**AI Switch** is a desktop **AI model management** app (Wails + Go). It unifies providers, models, and quotas used by popular market tools—so you can **spend fewer tokens** and **discover cheaper token vendors** more easily.
+**AIGateway** is a desktop **AI model management** app (Wails + Go). It unifies providers, models, and quotas used by popular market tools—so you can **spend fewer tokens** and **discover cheaper token vendors** more easily.
 
 Works with (not limited to):
 
@@ -165,18 +165,18 @@ Works with (not limited to):
 
 | Asset | Platform | Notes |
 |-------|----------|--------|
-| `AI-Switch-v1.0.0-macos-arm64.zip` | macOS Apple Silicon | Unzip → `AI Switch.app` |
-| `AI-Switch-v1.0.0-macos-amd64.zip` | macOS Intel | Unzip → `AI Switch.app` |
-| `AI-Switch-v1.0.0-windows-amd64-setup.exe` | Windows x64 | NSIS installer (recommended) |
-| `AI-Switch-v1.0.0-windows-amd64-portable.zip` | Windows x64 | Portable executable |
-| `AI-Switch-v1.0.0-linux-amd64.tar.gz` | Linux x64 | Unpack and run (when published) |
+| `AIGateway-v1.0.0-macos-arm64.zip` | macOS Apple Silicon | Unzip → `AIGateway.app` |
+| `AIGateway-v1.0.0-macos-amd64.zip` | macOS Intel | Unzip → `AIGateway.app` |
+| `AIGateway-v1.0.0-windows-amd64-setup.exe` | Windows x64 | NSIS installer (recommended) |
+| `AIGateway-v1.0.0-windows-amd64-portable.zip` | Windows x64 | Portable executable |
+| `AIGateway-v1.0.0-linux-amd64.tar.gz` | Linux x64 | Unpack and run (when published) |
 
 #### macOS
 
 1. Download the zip for your chip and extract  
-2. Move `AI Switch.app` to Applications  
+2. Move `AIGateway.app` to Applications  
 3. If Gatekeeper blocks it: System Settings → Privacy & Security → Open Anyway  
-4. Or: `xattr -cr "/Applications/AI Switch.app"`
+4. Or: `xattr -cr "/Applications/AIGateway.app"`
 
 #### Windows
 
@@ -187,7 +187,7 @@ Works with (not limited to):
 #### Linux
 
 1. Extract the tarball  
-2. `chmod +x AI-Switch && ./AI-Switch`  
+2. `chmod +x AIGateway && ./AIGateway`  
 3. Install WebKitGTK / GTK packages for your distro  
 
 ### Quick start
@@ -229,7 +229,7 @@ wails build -platform linux/amd64   # on Linux host or CI
 
 ### 概要
 
-**AI Switch** は **AI モデル管理** デスクトップアプリ（Wails + Go）です。市場で使われる各種 AI ツール向けに、モデル・ベンダー・枠をまとめて管理し、**Token を節約**し、**より安い Token サービス**を見つけやすくします。
+**AIGateway** は **AI モデル管理** デスクトップアプリ（Wails + Go）です。市場で使われる各種 AI ツール向けに、モデル・ベンダー・枠をまとめて管理し、**Token を節約**し、**より安い Token サービス**を見つけやすくします。
 
 対応・連携例（限定ではありません）：
 
@@ -261,15 +261,15 @@ wails build -platform linux/amd64   # on Linux host or CI
 
 | ファイル | 用途 |
 |----------|------|
-| `AI-Switch-v1.0.0-macos-arm64.zip` | Apple Silicon 用 |
-| `AI-Switch-v1.0.0-macos-amd64.zip` | Intel Mac 用 |
-| `AI-Switch-v1.0.0-windows-amd64-setup.exe` | Windows インストーラ（推奨） |
-| `AI-Switch-v1.0.0-windows-amd64-portable.zip` | Windows ポータブル |
-| `AI-Switch-v1.0.0-linux-amd64.tar.gz` | Linux バイナリ（公開時） |
+| `AIGateway-v1.0.0-macos-arm64.zip` | Apple Silicon 用 |
+| `AIGateway-v1.0.0-macos-amd64.zip` | Intel Mac 用 |
+| `AIGateway-v1.0.0-windows-amd64-setup.exe` | Windows インストーラ（推奨） |
+| `AIGateway-v1.0.0-windows-amd64-portable.zip` | Windows ポータブル |
+| `AIGateway-v1.0.0-linux-amd64.tar.gz` | Linux バイナリ（公開時） |
 
 ### インストール（要約）
 
-- **macOS**：zip を展開 → `AI Switch.app` をアプリケーションへ。初回は「プライバシーとセキュリティ」で許可  
+- **macOS**：zip を展開 → `AIGateway.app` をアプリケーションへ。初回は「プライバシーとセキュリティ」で許可  
 - **Windows**：setup を実行、または portable の exe を起動。必要なら WebView2 を導入  
 - **Linux**：tar.gz を展開 → 実行権限を付与 → WebKitGTK 等を導入  
 
@@ -296,7 +296,7 @@ wails build -platform linux/amd64   # on Linux host or CI
 
 ### Überblick
 
-**AI Switch** ist eine Desktop-**Modellverwaltungs**-App (Wails + Go). Sie bündelt Modelle, Anbieter und Kontingente für gängige AI-Tools—damit Sie **Tokens sparen** und **günstigere Token-Anbieter** leichter finden.
+**AIGateway** ist eine Desktop-**Modellverwaltungs**-App (Wails + Go). Sie bündelt Modelle, Anbieter und Kontingente für gängige AI-Tools—damit Sie **Tokens sparen** und **günstigere Token-Anbieter** leichter finden.
 
 Unterstützte / typische Werkzeuge (nicht abschließend):
 
@@ -328,11 +328,11 @@ Unterstützte / typische Werkzeuge (nicht abschließend):
 
 | Datei | Plattform |
 |-------|-----------|
-| `AI-Switch-v1.0.0-macos-arm64.zip` | macOS Apple Silicon |
-| `AI-Switch-v1.0.0-macos-amd64.zip` | macOS Intel |
-| `AI-Switch-v1.0.0-windows-amd64-setup.exe` | Windows-Installer (empfohlen) |
-| `AI-Switch-v1.0.0-windows-amd64-portable.zip` | Windows portable |
-| `AI-Switch-v1.0.0-linux-amd64.tar.gz` | Linux (falls veröffentlicht) |
+| `AIGateway-v1.0.0-macos-arm64.zip` | macOS Apple Silicon |
+| `AIGateway-v1.0.0-macos-amd64.zip` | macOS Intel |
+| `AIGateway-v1.0.0-windows-amd64-setup.exe` | Windows-Installer (empfohlen) |
+| `AIGateway-v1.0.0-windows-amd64-portable.zip` | Windows portable |
+| `AIGateway-v1.0.0-linux-amd64.tar.gz` | Linux (falls veröffentlicht) |
 
 ### Installation (kurz)
 
