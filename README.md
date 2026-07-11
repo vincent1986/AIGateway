@@ -27,24 +27,28 @@
 
 ## 功能概览
 
-- **厂家与模型**：API Base URL / Key，测试连接，拉取 `/models`，启用/禁用/默认模型  
-- **工具配置**：Codex / Claude Code 等配置文件自动搜索、备份还原、切换模型  
-- **统一入口（可选）**：本地 OpenAI 兼容代理，按 model 路由到真实厂家，方便 ChatGPT 兼容客户端与工具链接入  
-- **Token 套餐与统计**：额度计划 + 代理链路用量，帮你算清楚「还剩多少、花在哪」  
-- **多语言 UI**：中文 / English  
+- **厂家 / 模型 / 应用 / 统一入口 / Token 统计** 五栏解耦  
+- **SQLite 网关**：虚拟模型组、优先级 Failover、用量统计  
+- **一键接管**：ChatGPT / Claude Code / OpenClaw / Harness  
+- **预设库**：点选厂家，云端多数只需 API Key  
+- **多语言（弹窗）**：简中 / 繁中 / 英 / 日 / 韩 / 德 / 越 / 泰  
 - **跨平台**：macOS / Windows / Linux  
 
-## Download v1.0.0
+## Download
+
+### v2.0.0（当前）
 
 | Platform | Asset |
 |----------|--------|
-| macOS Apple Silicon | [AIGateway-v1.0.0-macos-arm64.zip](https://github.com/vincent1986/AIGateway/releases/download/v1.0.0/AIGateway-v1.0.0-macos-arm64.zip) |
-| macOS Intel | [AIGateway-v1.0.0-macos-amd64.zip](https://github.com/vincent1986/AIGateway/releases/download/v1.0.0/AIGateway-v1.0.0-macos-amd64.zip) |
-| Windows x64 Setup | [AIGateway-v1.0.0-windows-amd64-setup.exe](https://github.com/vincent1986/AIGateway/releases/download/v1.0.0/AIGateway-v1.0.0-windows-amd64-setup.exe) |
-| Windows x64 Portable | [AIGateway-v1.0.0-windows-amd64-portable.zip](https://github.com/vincent1986/AIGateway/releases/download/v1.0.0/AIGateway-v1.0.0-windows-amd64-portable.zip) |
-| Linux x64 | [AIGateway-v1.0.0-linux-amd64.tar.gz](https://github.com/vincent1986/AIGateway/releases/download/v1.0.0/AIGateway-v1.0.0-linux-amd64.tar.gz) |
+| macOS Apple Silicon | [AIGateway-v2.0.0-macos-arm64.zip](https://github.com/vincent1986/AIGateway/releases/download/v2.0.0/AIGateway-v2.0.0-macos-arm64.zip) |
+| macOS Intel | [AIGateway-v2.0.0-macos-amd64.zip](https://github.com/vincent1986/AIGateway/releases/download/v2.0.0/AIGateway-v2.0.0-macos-amd64.zip) |
+| Windows x64 Setup | [AIGateway-v2.0.0-windows-amd64-setup.exe](https://github.com/vincent1986/AIGateway/releases/download/v2.0.0/AIGateway-v2.0.0-windows-amd64-setup.exe) |
+| Windows x64 Portable | [AIGateway-v2.0.0-windows-amd64-portable.zip](https://github.com/vincent1986/AIGateway/releases/download/v2.0.0/AIGateway-v2.0.0-windows-amd64-portable.zip) |
+| Linux x64 | [AIGateway-v2.0.0-linux-amd64.tar.gz](https://github.com/vincent1986/AIGateway/releases/download/v2.0.0/AIGateway-v2.0.0-linux-amd64.tar.gz) |
 
-Full install guide (zh / en / ja / de): **[Release Notes](docs/RELEASE_NOTES_v1.0.0.md)** · **[GitHub Release](https://github.com/vincent1986/AIGateway/releases/tag/v1.0.0)**
+**说明**：[RELEASE_NOTES_v2.0.0.md](docs/RELEASE_NOTES_v2.0.0.md) · **[GitHub Release](https://github.com/vincent1986/AIGateway/releases/tag/v2.0.0)**  
+**V2 PRD**: [PRD_V2.md](docs/PRD_V2.md) · **验收清单**: [PRD_V2_CHECKLIST.md](docs/PRD_V2_CHECKLIST.md)  
+**v1.0.0 归档**: [releases/tag/v1.0.0](https://github.com/vincent1986/AIGateway/releases/tag/v1.0.0)
 
 ## 开发
 
@@ -58,10 +62,11 @@ wails dev
 
 | 内容 | 路径 |
 |------|------|
-| 厂家与密钥 | `~/.codex-manager/providers.json` |
+| SQLite 主库 | `~/.codex-manager/aigateway.db` |
+| 厂家 JSON 镜像 | `~/.codex-manager/providers.json` |
 | 配置路径覆盖 | `~/.codex-manager/paths.json` |
-| 默认备份 | `~/.codex-manager/backups/{codex,claude}/` |
-| 代理配置 | `~/.codex-manager/proxy.json`（默认 `http://127.0.0.1:18080/v1`） |
+| 默认备份 | `~/.codex-manager/backups/` |
+| 网关配置 | `~/.codex-manager/proxy.json`（默认 `http://127.0.0.1:18080/v1`） |
 
 ### 给 Codex / 兼容客户端用的统一入口
 
