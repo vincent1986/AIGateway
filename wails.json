@@ -13,7 +13,7 @@
   "info": {
     "companyName": "AI Switch",
     "productName": "AI Switch",
-    "productVersion": "1.0.0",
+    "productVersion": "2.0.0-dev",
     "copyright": "Copyright © 2026",
     "comments": "Multi-provider AI model switcher for Codex & Claude Code"
   }
