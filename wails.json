@@ -13,7 +13,7 @@
   "info": {
     "companyName": "AIGateway",
     "productName": "AIGateway",
-    "productVersion": "1.0.0",
+    "productVersion": "2.0.0",
     "copyright": "Copyright © 2026",
     "comments": "AI model manager for Codex, ChatGPT, Claude, OpenClaw, Harness — save tokens, find cheaper providers"
   }

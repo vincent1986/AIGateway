@@ -13,7 +13,8 @@
 - **OpenClaw**、**Harness** 等工具链与编排场景  
 - 以及其它走 **OpenAI 兼容 API** 的本地或云端工具  
 
-**English / 日本語 / Deutsch** release notes: [docs/RELEASE_NOTES_v1.0.0.md](docs/RELEASE_NOTES_v1.0.0.md)
+**English / 日本語 / Deutsch** release notes: [docs/RELEASE_NOTES_v1.0.0.md](docs/RELEASE_NOTES_v1.0.0.md)  
+**V2 PRD**: [docs/PRD_V2.md](docs/PRD_V2.md) · **验收清单**: [docs/PRD_V2_CHECKLIST.md](docs/PRD_V2_CHECKLIST.md)
 
 ## 你能得到什么
 

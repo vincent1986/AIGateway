@@ -1,650 +1,77 @@
-/** Lightweight i18n for AIGateway (zh / en). No external deps. */
+/** AIGateway i18n — multi-locale with popup language picker. */
+
+import zhCN from "./locales/zh-CN.json";
+import zhTW from "./locales/zh-TW.json";
+import en from "./locales/en.json";
+import ja from "./locales/ja.json";
+import ko from "./locales/ko.json";
+import de from "./locales/de.json";
+import vi from "./locales/vi.json";
+import th from "./locales/th.json";
 
 export const LOCALE_KEY = "codex.ui.locale";
-export const SUPPORTED = ["zh", "en"];
+
+/** @typedef {{ id: string, label: string, native: string, htmlLang: string, bcp47: string }} LocaleMeta */
+
+/** Supported languages for the language popup (order = display order). */
+export const LOCALES = /** @type {LocaleMeta[]} */ ([
+  { id: "zh", label: "简体中文", native: "简体中文", htmlLang: "zh-CN", bcp47: "zh-CN" },
+  { id: "zh-TW", label: "繁體中文", native: "繁體中文", htmlLang: "zh-TW", bcp47: "zh-TW" },
+  { id: "en", label: "English", native: "English", htmlLang: "en", bcp47: "en-US" },
+  { id: "ja", label: "日本語", native: "日本語", htmlLang: "ja", bcp47: "ja-JP" },
+  { id: "ko", label: "한국어", native: "한국어", htmlLang: "ko", bcp47: "ko-KR" },
+  { id: "de", label: "Deutsch", native: "Deutsch", htmlLang: "de", bcp47: "de-DE" },
+  { id: "vi", label: "Tiếng Việt", native: "Tiếng Việt", htmlLang: "vi", bcp47: "vi-VN" },
+  { id: "th", label: "ไทย", native: "ไทย", htmlLang: "th", bcp47: "th-TH" },
+]);
+
+export const SUPPORTED = LOCALES.map((l) => l.id);
 
 const dict = {
-  zh: {
-    "brand.sub": "省 Token · 多工具",
-    "nav.providers": "厂家模型",
-    "nav.configs": "配置文件",
-    "nav.proxy": "统一入口",
-    "nav.usage": "Token 统计",
-    "stat.providers": "厂家",
-    "stat.models": "模型",
-    "stat.enabled": "已启用",
-    "stat.proxy": "代理",
-    "lang.zh": "中文",
-    "lang.en": "EN",
-    "lang.switch": "语言",
-
-    "boot.loading": "正在加载…",
-    "boot.loadingDesc": "读取厂家与系统信息",
-
-    "reveal.darwin": "在访达中显示",
-    "reveal.windows": "在资源管理器中显示",
-    "reveal.linux": "在文件管理器中显示",
-
-    "unit.wan": "万",
-    "unit.yi": "亿",
-
-    "common.dash": "—",
-    "common.close": "关闭",
-    "common.cancel": "取消",
-    "common.save": "保存",
-    "common.add": "添加",
-    "common.edit": "编辑",
-    "common.delete": "删除",
-    "common.copy": "复制",
-    "common.apply": "应用",
-    "common.refresh": "刷新",
-    "common.none": "（无）",
-    "common.unnamed": "未命名",
-    "common.current": "当前",
-    "common.standby": "备用",
-    "common.more": "更多",
-    "common.error": "错误",
-    "common.note": "备注",
-    "common.ready": "就绪",
-    "common.models": "模型",
-
-    "preset.qwen": "通义千问",
-    "preset.zhipu": "清华智谱",
-    "preset.custom": "自定义",
-
-    "pkg.unnamed": "未命名套餐",
-
-    "toast.migrated": "已迁移 {n} 个本地厂家到应用存储",
-    "toast.loadProvidersFail": "加载厂家失败，已回退本地缓存",
-    "toast.rescanned": "已重新搜索配置文件",
-    "toast.proxyStarted": "代理已启动",
-    "toast.proxyStartFail": "启动失败",
-    "toast.proxyStopped": "代理已停止",
-    "toast.proxySaved": "代理配置已保存",
-    "toast.copiedBase": "已复制 Base URL",
-    "toast.copyFail": "复制失败，请手动选择",
-    "toast.usageRefreshed": "统计已刷新",
-    "toast.usageCleared": "已清空统计",
-    "toast.scanFail": "{name} 自动搜索失败，请手动选择",
-    "toast.located": "{name} 已定位",
-    "toast.picked": "已选择 {path}",
-    "toast.clearedPath": "已清除手动路径并重新搜索",
-    "toast.backedUp": "已备份为默认配置",
-    "toast.deepseekMigrated": "已迁移 Claude Code → DeepSeek",
-    "toast.restored": "已还原默认配置",
-    "toast.backupCleared": "已清除默认备份",
-    "toast.selectModel": "请选择或输入模型",
-    "toast.configMissing": "配置文件不存在，请先手动选择路径",
-    "toast.noPath": "未选择路径",
-    "toast.switched": "已切换为 {model}",
-    "toast.toolConfigMissing": "{tool} 配置未找到，请手动选择",
-    "toast.noConfigPath": "未选择配置文件",
-    "toast.needName": "请填写厂家名称",
-    "toast.needBase": "请填写 API Base URL",
-    "toast.savedProxy": "已保存，并自动配置本地代理",
-    "toast.savedDirect": "已保存（直连模式）",
-    "toast.pkgActive": "已设为当前套餐",
-    "toast.pkgDeleted": "套餐已删除",
-    "toast.testFail": "测试失败",
-    "toast.needBaseOnly": "请先填写 API Base URL",
-    "toast.needBaseAndKey": "请先填写 API Base URL 与 API Key",
-    "toast.cannotTest": "无法测试",
-    "toast.runInWails": "请在 Wails 应用中运行（wails dev）",
-    "toast.runInWailsShort": "请在 Wails 应用中运行",
-    "toast.connOk": "连接成功",
-    "toast.connFail": "连接失败",
-    "toast.testException": "测试异常",
-    "toast.needNameAndApi": "请先完善名称与 API",
-    "toast.needKey": "请先填写 API Key",
-    "toast.fetchedModels": "已获取 {n} 个模型",
-    "toast.deletedProvider": "已删除厂家",
-    "toast.defaultModel": "默认模型：{id}",
-    "toast.wroteCodex": "已写入 Codex：{id}",
-    "toast.wroteClaude": "已写入 Claude：{id}",
-    "toast.needPkgName": "请填写套餐名称",
-    "toast.needPkgTotal": "Token 总量必须大于 0",
-    "toast.pkgUpdated": "套餐已更新",
-    "toast.pkgAdded": "套餐已添加",
-    "toast.addedProvider": "已添加 {name}",
-    "toast.fetchInWails": "请在 Wails 应用中运行以真实获取模型",
-
-    "confirm.clearUsage": "确定清空全部 Token 统计？此操作不可恢复。",
-    "confirm.restoreDefault": "确定将「{name}」还原为默认备份？\n当前配置会先写入历史快照。",
-    "confirm.clearBackup": "清除默认备份后，将无法还原。确定？",
-    "confirm.deletePkg": "确定删除该套餐？",
-    "confirm.deleteProvider": "确定删除厂家「{name}」及其模型？",
-
-    "proxy.title": "统一入口（OpenAI 兼容）",
-    "proxy.desc": "给 Codex / ChatGPT 兼容客户端 / Claude 工具链等提供同一 Base URL；按模型路由到更便宜的厂家，帮你省 Token。",
-    "proxy.stop": "停止代理",
-    "proxy.start": "启动代理",
-    "proxy.refresh": "刷新状态",
-    "proxy.status": "服务状态",
-    "proxy.running": "运行中",
-    "proxy.stopped": "已停止",
-    "proxy.baseUrlLabel": "OpenAI Base URL（给 Codex / 客户端用）",
-    "proxy.host": "监听地址",
-    "proxy.port": "端口",
-    "proxy.listenKey": "接入密钥（可选，客户端 Bearer；空则不校验）",
-    "proxy.listenKeyPh": "留空=任意 token",
-    "proxy.autoStart": "应用启动时自动开启代理",
-    "proxy.save": "保存配置",
-    "proxy.hintAuto": "在厂家模型里选择「走本地代理」后会自动启动代理并写入 Codex 的 base_url，无需在此单独设置。Windows 系统代理下，本机 127.0.0.1 自动直连，云 API 仍可走系统代理。",
-    "proxy.hintFlow": "流程：厂家开启「走本地代理」并保存 → 代理自动就绪 → Codex 请求经上方地址转发到真实 API。",
-    "proxy.routing": "路由说明",
-    "proxy.endpoints": "支持端点（标准 OpenAI）",
-    "proxy.matchModel": "按 model 匹配厂家",
-    "proxy.colProvider": "厂家",
-    "proxy.colModels": "已启用模型",
-    "proxy.noProviders": "暂无厂家，请先在「厂家模型」添加",
-    "proxy.logs": "运行日志",
-    "proxy.logsDesc": "最近请求与路由记录",
-    "proxy.noLogs": "（暂无日志，启动代理后在此查看）",
-
-    "providers.title": "厂家",
-    "providers.add": "+ 添加",
-    "providers.noApi": "未配置 API",
-    "providers.viaProxy": "走代理",
-    "providers.direct": "直连",
-    "providers.badgeProxy": "代",
-    "providers.badgeDirect": "直",
-    "providers.emptySide": "还没有厂家<br/>点击「添加」开始",
-
-    "configs.title": "配置文件管理",
-    "configs.desc": "管理 Codex 与 Claude Code（{platform}）：自动搜索 · 手动选择 · 备份还原 · 切换模型。",
-    "configs.searching": "搜索中…",
-    "configs.rescan": "重新自动搜索",
-    "configs.searchingMsg": "正在搜索…",
-    "configs.notLoaded": "尚未加载",
-    "configs.located": "已定位",
-    "configs.notFound": "未找到",
-    "configs.pathLabel": "配置文件路径",
-    "configs.autoScan": "自动搜索",
-    "configs.pick": "手动选择",
-    "configs.clearPath": "清除手动路径",
-    "configs.updateBackup": "更新默认备份",
-    "configs.backupDefault": "备份为默认",
-    "configs.restoreDefault": "还原默认",
-    "configs.clearBackup": "清除备份",
-    "configs.hasBackup": "已有默认备份",
-    "configs.noBackup": "尚未备份",
-    "configs.backupHint": "默认备份：{at} · 首次修改前自动备份",
-    "configs.autoBackupHint": "切换模型前会自动备份当前配置，之后可一键还原",
-    "configs.waitSearch": "等待搜索",
-    "configs.currentModel": "当前模型",
-    "configs.unset": "（未设置）",
-    "configs.claudeCompat": "model + env (教程兼容)",
-    "configs.switchModel": "切换模型",
-    "configs.selectModel": "选择模型…",
-    "configs.customModelHint": "也可直接输入自定义模型 ID",
-    "configs.deepseekOneClick": "一键迁移 DeepSeek → Claude Code",
-    "configs.deepseekHint": "官方路径：ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic · 主模型 deepseek-v4-pro[1m] · 子代理 deepseek-v4-flash",
-    "configs.searchPaths": "自动搜索路径",
-    "configs.preview": "文件预览",
-    "configs.groupInFile": "配置文件内",
-    "configs.groupCurrent": "当前",
-    "configs.browserPreview": "当前为浏览器预览，请用 wails dev 连接本机",
-
-    "empty.title": "选择或添加厂家",
-    "empty.desc": "配置厂家名称、API Base URL 与 API Key，即可自动获取可用模型，并应用到 Codex / Claude Code。",
-    "empty.add": "添加厂家",
-
-    "pkg.title": "Token 套餐",
-    "pkg.desc": "管理该厂家的额度套餐；已用 = 手动偏移 + 本地代理统计",
-    "pkg.add": "+ 添加套餐",
-    "pkg.current": "当前套餐",
-    "pkg.expired": "已过期",
-    "pkg.total": "总量",
-    "pkg.used": "已用",
-    "pkg.remaining": "剩余",
-    "pkg.usage": "用量",
-    "pkg.expireAt": "到期：{at}",
-    "pkg.noPkgHint": "尚未配置套餐。添加后可追踪剩余额度。",
-    "pkg.colName": "套餐",
-    "pkg.colTotal": "总量",
-    "pkg.colOffset": "偏移已用",
-    "pkg.colPrice": "价格",
-    "pkg.colPeriod": "有效期",
-    "pkg.colStatus": "状态",
-    "pkg.colActions": "操作",
-    "pkg.setCurrent": "设为当前",
-    "pkg.empty": "暂无套餐",
-    "pkg.emptyHint": "点击「添加套餐」录入购买额度",
-
-    "detail.title": "厂家配置",
-    "detail.desc": "名称 · API Base URL · API Key · 持久化到本机",
-    "detail.delete": "删除厂家",
-    "detail.name": "厂家名称",
-    "detail.namePh": "例如 OpenAI",
-    "detail.color": "主题色",
-    "detail.base": "API Base URL",
-    "detail.baseHint": "OpenAI 兼容接口：自动请求 {base}/models",
-    "detail.key": "API Key",
-    "detail.keyPhLocal": "Ollama 可填 ollama 或留空",
-    "detail.keyPh": "sk-...",
-    "detail.show": "显示",
-    "detail.hide": "隐藏",
-    "detail.keyHint": "密钥保存在 ~/.codex-manager/providers.json（仅本机）",
-    "detail.access": "访问方式",
-    "detail.viaLocalProxy": "走本地代理",
-    "detail.directNoProxy": "直连（不代理）",
-    "detail.proxyHintOn": "保存后自动启动代理，并把该厂家在 Codex 中的 base_url 改为本地代理地址",
-    "detail.proxyHintOff": "保存后使用上方 Base URL 直连（适合 Ollama 等本机服务）",
-    "detail.save": "保存配置",
-    "detail.testing": "测试中…",
-    "detail.test": "测试连接",
-    "detail.fetching": "获取中…",
-    "detail.fetch": "自动获取模型",
-    "detail.modelsTitle": "模型列表",
-    "detail.modelsDesc": "可启用/禁用、设默认，并一键写入 Codex / Claude Code 配置",
-    "detail.refreshModels": "刷新获取",
-    "detail.searchPh": "搜索模型 ID / 名称",
-    "detail.modelCount": "{shown} / {total} 个模型",
-    "detail.colEnable": "启用",
-    "detail.colId": "模型 ID",
-    "detail.colName": "名称",
-    "detail.colStatus": "状态",
-    "detail.colActions": "操作",
-    "detail.toggleTitle": "启用/禁用",
-    "detail.tagDefault": "默认",
-    "detail.tagOn": "启用",
-    "detail.tagOff": "禁用",
-    "detail.setDefault": "设为默认",
-    "detail.toCodex": "→ Codex",
-    "detail.toClaude": "→ Claude",
-    "detail.toCodexTitle": "写入 Codex 配置",
-    "detail.toClaudeTitle": "写入 Claude Code 配置（DeepSeek 自动用官方 anthropic 端点）",
-    "detail.remove": "移除",
-    "detail.noMatch": "没有匹配的模型",
-    "detail.noModels": "暂无模型",
-    "detail.trySearch": "试试其他搜索词",
-    "detail.fetchHint": "填写 API 与 Key 后点击「自动获取模型」",
-
-    "test.running": "正在测试连接…",
-    "test.hint": "请求 {baseUrl}/models，最长约 30 秒",
-    "test.endpoint": "请求地址",
-    "test.http": "HTTP 状态",
-    "test.latency": "耗时",
-    "test.modelCount": "模型数量",
-    "test.sample": "示例模型",
-    "test.errorDetail": "错误详情",
-
-    "usage.title": "Token 使用统计",
-    "usage.desc": "看清 Token 花在哪：经统一入口转发的用量（输入 / 输出 / 合计）。便于对比服务商、控制开销；直连本机服务不经入口则不计入。",
-    "usage.refresh": "刷新",
-    "usage.clear": "清空统计",
-    "usage.calls": "请求次数",
-    "usage.input": "输入 Tokens",
-    "usage.output": "输出 Tokens",
-    "usage.total": "合计 Tokens",
-    "usage.byModel": "按模型",
-    "usage.byProvider": "按厂家",
-    "usage.byDay": "按日（近 30 天）",
-    "usage.recent": "最近请求",
-    "usage.recentDesc": "最多 50 条",
-    "usage.colModel": "模型",
-    "usage.colProvider": "厂家",
-    "usage.colCalls": "次数",
-    "usage.colInput": "输入",
-    "usage.colOutput": "输出",
-    "usage.colTotal": "合计",
-    "usage.colDate": "日期",
-    "usage.colTime": "时间",
-    "usage.colEndpoint": "端点",
-    "usage.noData": "暂无数据",
-    "usage.noRecent": "暂无记录。请启动代理并用 Codex 经代理访问后刷新。",
-
-    "modal.pkgEdit": "编辑套餐",
-    "modal.pkgAdd": "添加 Token 套餐",
-    "modal.pkgName": "套餐名称",
-    "modal.pkgNamePh": "例如：标准 100 万",
-    "modal.pkgTotal": "Token 总量",
-    "modal.pkgTotalPh": "1000000 或 100万",
-    "modal.pkgTotalHint": "支持数字，或「100万」「1亿」",
-    "modal.pkgOffset": "已用偏移（购买前已消耗）",
-    "modal.pkgPrice": "价格",
-    "modal.pkgCurrency": "币种",
-    "modal.pkgStart": "开始日期",
-    "modal.pkgExpire": "到期日期",
-    "modal.pkgNote": "备注",
-    "modal.pkgNotePh": "订单号 / 渠道等",
-    "modal.pkgSetActive": "设为当前套餐",
-    "modal.addProvider": "添加厂家",
-    "modal.preset": "快速预设",
-    "modal.access": "访问方式",
-  },
-
-  en: {
-    "brand.sub": "Save tokens · multi-tool",
-    "nav.providers": "Providers",
-    "nav.configs": "Configs",
-    "nav.proxy": "Gateway",
-    "nav.usage": "Token Usage",
-    "stat.providers": "Providers",
-    "stat.models": "Models",
-    "stat.enabled": "Enabled",
-    "stat.proxy": "Proxy",
-    "lang.zh": "中文",
-    "lang.en": "EN",
-    "lang.switch": "Language",
-
-    "boot.loading": "Loading…",
-    "boot.loadingDesc": "Reading providers and system info",
-
-    "reveal.darwin": "Reveal in Finder",
-    "reveal.windows": "Show in Explorer",
-    "reveal.linux": "Show in File Manager",
-
-    "unit.wan": "0k",
-    "unit.yi": "00M",
-
-    "common.dash": "—",
-    "common.close": "Close",
-    "common.cancel": "Cancel",
-    "common.save": "Save",
-    "common.add": "Add",
-    "common.edit": "Edit",
-    "common.delete": "Delete",
-    "common.copy": "Copy",
-    "common.apply": "Apply",
-    "common.refresh": "Refresh",
-    "common.none": "(none)",
-    "common.unnamed": "Unnamed",
-    "common.current": "Active",
-    "common.standby": "Standby",
-    "common.more": "more",
-    "common.error": "Error",
-    "common.note": "Note",
-    "common.ready": "Ready",
-    "common.models": "Models",
-
-    "preset.qwen": "Qwen",
-    "preset.zhipu": "Zhipu",
-    "preset.custom": "Custom",
-
-    "pkg.unnamed": "Unnamed package",
-
-    "toast.migrated": "Migrated {n} local provider(s) to app storage",
-    "toast.loadProvidersFail": "Failed to load providers; fell back to local cache",
-    "toast.rescanned": "Rescanned config files",
-    "toast.proxyStarted": "Proxy started",
-    "toast.proxyStartFail": "Failed to start",
-    "toast.proxyStopped": "Proxy stopped",
-    "toast.proxySaved": "Proxy settings saved",
-    "toast.copiedBase": "Base URL copied",
-    "toast.copyFail": "Copy failed; select manually",
-    "toast.usageRefreshed": "Usage refreshed",
-    "toast.usageCleared": "Usage cleared",
-    "toast.scanFail": "{name}: auto-scan failed; pick a file manually",
-    "toast.located": "{name} located",
-    "toast.picked": "Selected {path}",
-    "toast.clearedPath": "Cleared manual path and rescanned",
-    "toast.backedUp": "Saved as default backup",
-    "toast.deepseekMigrated": "Migrated Claude Code → DeepSeek",
-    "toast.restored": "Restored default config",
-    "toast.backupCleared": "Default backup cleared",
-    "toast.selectModel": "Select or enter a model",
-    "toast.configMissing": "Config file missing; pick a path first",
-    "toast.noPath": "No path selected",
-    "toast.switched": "Switched to {model}",
-    "toast.toolConfigMissing": "{tool} config not found; pick manually",
-    "toast.noConfigPath": "No config file selected",
-    "toast.needName": "Enter a provider name",
-    "toast.needBase": "Enter API Base URL",
-    "toast.savedProxy": "Saved; local proxy configured",
-    "toast.savedDirect": "Saved (direct mode)",
-    "toast.pkgActive": "Set as active package",
-    "toast.pkgDeleted": "Package deleted",
-    "toast.testFail": "Test failed",
-    "toast.needBaseOnly": "Enter API Base URL first",
-    "toast.needBaseAndKey": "Enter API Base URL and API Key first",
-    "toast.cannotTest": "Cannot test",
-    "toast.runInWails": "Run inside the Wails app (wails dev)",
-    "toast.runInWailsShort": "Run inside the Wails app",
-    "toast.connOk": "Connected",
-    "toast.connFail": "Connection failed",
-    "toast.testException": "Test error",
-    "toast.needNameAndApi": "Complete name and API first",
-    "toast.needKey": "Enter API Key first",
-    "toast.fetchedModels": "Fetched {n} model(s)",
-    "toast.deletedProvider": "Provider deleted",
-    "toast.defaultModel": "Default model: {id}",
-    "toast.wroteCodex": "Wrote to Codex: {id}",
-    "toast.wroteClaude": "Wrote to Claude: {id}",
-    "toast.needPkgName": "Enter package name",
-    "toast.needPkgTotal": "Token total must be > 0",
-    "toast.pkgUpdated": "Package updated",
-    "toast.pkgAdded": "Package added",
-    "toast.addedProvider": "Added {name}",
-    "toast.fetchInWails": "Run in the Wails app to fetch models",
-
-    "confirm.clearUsage": "Clear all token usage stats? This cannot be undone.",
-    "confirm.restoreDefault": "Restore “{name}” from default backup?\nCurrent config will be snapshotted first.",
-    "confirm.clearBackup": "After clearing the default backup, restore will be unavailable. Continue?",
-    "confirm.deletePkg": "Delete this package?",
-    "confirm.deleteProvider": "Delete provider “{name}” and its models?",
-
-    "proxy.title": "Unified gateway (OpenAI-compatible)",
-    "proxy.desc": "One Base URL for Codex, ChatGPT-compatible clients, Claude toolchains, and more. Route by model to cheaper vendors to save tokens.",
-    "proxy.stop": "Stop proxy",
-    "proxy.start": "Start proxy",
-    "proxy.refresh": "Refresh status",
-    "proxy.status": "Service status",
-    "proxy.running": "Running",
-    "proxy.stopped": "Stopped",
-    "proxy.baseUrlLabel": "OpenAI Base URL (for Codex / clients)",
-    "proxy.host": "Listen address",
-    "proxy.port": "Port",
-    "proxy.listenKey": "Access key (optional client Bearer; empty = no check)",
-    "proxy.listenKeyPh": "Empty = any token",
-    "proxy.autoStart": "Start proxy when the app launches",
-    "proxy.save": "Save settings",
-    "proxy.hintAuto": "Choosing “via local proxy” on a provider auto-starts the proxy and writes Codex base_url. On Windows system proxy, 127.0.0.1 stays direct; cloud APIs still use the system proxy.",
-    "proxy.hintFlow": "Flow: enable “via local proxy” on a provider → proxy is ready → Codex requests go through the URL above to the real API.",
-    "proxy.routing": "Routing",
-    "proxy.endpoints": "Supported endpoints (OpenAI)",
-    "proxy.matchModel": "Match provider by model",
-    "proxy.colProvider": "Provider",
-    "proxy.colModels": "Enabled models",
-    "proxy.noProviders": "No providers yet — add them under Providers",
-    "proxy.logs": "Runtime logs",
-    "proxy.logsDesc": "Recent requests and routing",
-    "proxy.noLogs": "(No logs yet; start the proxy to see them here)",
-
-    "providers.title": "Providers",
-    "providers.add": "+ Add",
-    "providers.noApi": "API not set",
-    "providers.viaProxy": "Via proxy",
-    "providers.direct": "Direct",
-    "providers.badgeProxy": "P",
-    "providers.badgeDirect": "D",
-    "providers.emptySide": "No providers yet<br/>Click “Add” to start",
-
-    "configs.title": "Config files",
-    "configs.desc": "Manage Codex and Claude Code on {platform}: auto-scan · pick file · backup/restore · switch model.",
-    "configs.searching": "Searching…",
-    "configs.rescan": "Rescan",
-    "configs.searchingMsg": "Searching…",
-    "configs.notLoaded": "Not loaded",
-    "configs.located": "Found",
-    "configs.notFound": "Not found",
-    "configs.pathLabel": "Config path",
-    "configs.autoScan": "Auto-scan",
-    "configs.pick": "Pick file",
-    "configs.clearPath": "Clear manual path",
-    "configs.updateBackup": "Update default backup",
-    "configs.backupDefault": "Backup as default",
-    "configs.restoreDefault": "Restore default",
-    "configs.clearBackup": "Clear backup",
-    "configs.hasBackup": "Default backup ready",
-    "configs.noBackup": "No backup yet",
-    "configs.backupHint": "Default backup: {at} · auto-backed up before first change",
-    "configs.autoBackupHint": "Config is auto-backed up before switching models; restore anytime",
-    "configs.waitSearch": "Waiting for scan",
-    "configs.currentModel": "Current model",
-    "configs.unset": "(not set)",
-    "configs.claudeCompat": "model + env (tutorial-compatible)",
-    "configs.switchModel": "Switch model",
-    "configs.selectModel": "Select model…",
-    "configs.customModelHint": "Or type a custom model ID",
-    "configs.deepseekOneClick": "One-click DeepSeek → Claude Code",
-    "configs.deepseekHint": "Official path: ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic · main deepseek-v4-pro[1m] · subagent deepseek-v4-flash",
-    "configs.searchPaths": "Auto-scan paths",
-    "configs.preview": "File preview",
-    "configs.groupInFile": "In config file",
-    "configs.groupCurrent": "Current",
-    "configs.browserPreview": "Browser preview — run wails dev for the real backend",
-
-    "empty.title": "Select or add a provider",
-    "empty.desc": "Set name, API Base URL and API Key to fetch models and apply them to Codex / Claude Code.",
-    "empty.add": "Add provider",
-
-    "pkg.title": "Token packages",
-    "pkg.desc": "Manage quotas for this provider; used = manual offset + local proxy stats",
-    "pkg.add": "+ Add package",
-    "pkg.current": "Active package",
-    "pkg.expired": "Expired",
-    "pkg.total": "Total",
-    "pkg.used": "Used",
-    "pkg.remaining": "Left",
-    "pkg.usage": "Usage",
-    "pkg.expireAt": "Expires: {at}",
-    "pkg.noPkgHint": "No package yet. Add one to track remaining quota.",
-    "pkg.colName": "Package",
-    "pkg.colTotal": "Total",
-    "pkg.colOffset": "Offset used",
-    "pkg.colPrice": "Price",
-    "pkg.colPeriod": "Valid period",
-    "pkg.colStatus": "Status",
-    "pkg.colActions": "Actions",
-    "pkg.setCurrent": "Set active",
-    "pkg.empty": "No packages",
-    "pkg.emptyHint": "Click “Add package” to enter purchased quota",
-
-    "detail.title": "Provider settings",
-    "detail.desc": "Name · API Base URL · API Key · stored on this device",
-    "detail.delete": "Delete provider",
-    "detail.name": "Provider name",
-    "detail.namePh": "e.g. OpenAI",
-    "detail.color": "Color",
-    "detail.base": "API Base URL",
-    "detail.baseHint": "OpenAI-compatible: requests {base}/models",
-    "detail.key": "API Key",
-    "detail.keyPhLocal": "Ollama: ollama or leave empty",
-    "detail.keyPh": "sk-...",
-    "detail.show": "Show",
-    "detail.hide": "Hide",
-    "detail.keyHint": "Keys are stored in ~/.codex-manager/providers.json (local only)",
-    "detail.access": "Access mode",
-    "detail.viaLocalProxy": "Via local proxy",
-    "detail.directNoProxy": "Direct (no proxy)",
-    "detail.proxyHintOn": "On save, start proxy and point this provider’s Codex base_url to the local proxy",
-    "detail.proxyHintOff": "On save, use Base URL above directly (good for Ollama and local services)",
-    "detail.save": "Save",
-    "detail.testing": "Testing…",
-    "detail.test": "Test connection",
-    "detail.fetching": "Fetching…",
-    "detail.fetch": "Fetch models",
-    "detail.modelsTitle": "Models",
-    "detail.modelsDesc": "Enable/disable, set default, write to Codex / Claude Code",
-    "detail.refreshModels": "Refresh",
-    "detail.searchPh": "Search model ID / name",
-    "detail.modelCount": "{shown} / {total} models",
-    "detail.colEnable": "On",
-    "detail.colId": "Model ID",
-    "detail.colName": "Name",
-    "detail.colStatus": "Status",
-    "detail.colActions": "Actions",
-    "detail.toggleTitle": "Enable/disable",
-    "detail.tagDefault": "Default",
-    "detail.tagOn": "On",
-    "detail.tagOff": "Off",
-    "detail.setDefault": "Set default",
-    "detail.toCodex": "→ Codex",
-    "detail.toClaude": "→ Claude",
-    "detail.toCodexTitle": "Write Codex config",
-    "detail.toClaudeTitle": "Write Claude Code config (DeepSeek uses official anthropic endpoint)",
-    "detail.remove": "Remove",
-    "detail.noMatch": "No matching models",
-    "detail.noModels": "No models",
-    "detail.trySearch": "Try another search",
-    "detail.fetchHint": "Fill API & key, then click “Fetch models”",
-
-    "test.running": "Testing connection…",
-    "test.hint": "Requesting {baseUrl}/models (up to ~30s)",
-    "test.endpoint": "Endpoint",
-    "test.http": "HTTP status",
-    "test.latency": "Latency",
-    "test.modelCount": "Models",
-    "test.sample": "Sample models",
-    "test.errorDetail": "Error detail",
-
-    "usage.title": "Token usage",
-    "usage.desc": "See where tokens go: usage via the unified gateway (input / output / total). Compare vendors and control spend. Direct local traffic is not counted.",
-    "usage.refresh": "Refresh",
-    "usage.clear": "Clear stats",
-    "usage.calls": "Requests",
-    "usage.input": "Input tokens",
-    "usage.output": "Output tokens",
-    "usage.total": "Total tokens",
-    "usage.byModel": "By model",
-    "usage.byProvider": "By provider",
-    "usage.byDay": "By day (last 30)",
-    "usage.recent": "Recent requests",
-    "usage.recentDesc": "Up to 50",
-    "usage.colModel": "Model",
-    "usage.colProvider": "Provider",
-    "usage.colCalls": "Calls",
-    "usage.colInput": "Input",
-    "usage.colOutput": "Output",
-    "usage.colTotal": "Total",
-    "usage.colDate": "Date",
-    "usage.colTime": "Time",
-    "usage.colEndpoint": "Endpoint",
-    "usage.noData": "No data",
-    "usage.noRecent": "No records yet. Start the proxy and use Codex through it, then refresh.",
-
-    "modal.pkgEdit": "Edit package",
-    "modal.pkgAdd": "Add token package",
-    "modal.pkgName": "Package name",
-    "modal.pkgNamePh": "e.g. Standard 1M",
-    "modal.pkgTotal": "Token total",
-    "modal.pkgTotalPh": "1000000 or 1M",
-    "modal.pkgTotalHint": "Numbers, or 100万 / 1亿 / 1M / 1B",
-    "modal.pkgOffset": "Used offset (already consumed)",
-    "modal.pkgPrice": "Price",
-    "modal.pkgCurrency": "Currency",
-    "modal.pkgStart": "Start date",
-    "modal.pkgExpire": "Expire date",
-    "modal.pkgNote": "Note",
-    "modal.pkgNotePh": "Order ID / channel, etc.",
-    "modal.pkgSetActive": "Set as active package",
-    "modal.addProvider": "Add provider",
-    "modal.preset": "Quick preset",
-    "modal.access": "Access mode",
-  },
+  zh: zhCN,
+  "zh-TW": zhTW,
+  en,
+  ja,
+  ko,
+  de,
+  vi,
+  th,
 };
 
-/** @type {'zh'|'en'} */
+/** @type {string} */
 let locale = detectLocale();
 
 function detectLocale() {
   try {
     const saved = localStorage.getItem(LOCALE_KEY);
-    if (saved && SUPPORTED.includes(saved)) return /** @type {'zh'|'en'} */ (saved);
+    if (saved && SUPPORTED.includes(saved)) return saved;
+    // migrate old keys
+    if (saved === "zh-CN") return "zh";
   } catch (_) {}
-  const nav = (navigator.language || "").toLowerCase();
-  return nav.startsWith("zh") ? "zh" : "en";
+  const nav = (typeof navigator !== "undefined" ? navigator.language || "" : "").toLowerCase();
+  if (nav.startsWith("zh-tw") || nav.startsWith("zh-hk") || nav.startsWith("zh-mo") || nav === "zh-hant") return "zh-TW";
+  if (nav.startsWith("zh")) return "zh";
+  if (nav.startsWith("ja")) return "ja";
+  if (nav.startsWith("ko")) return "ko";
+  if (nav.startsWith("de")) return "de";
+  if (nav.startsWith("vi")) return "vi";
+  if (nav.startsWith("th")) return "th";
+  if (nav.startsWith("en")) return "en";
+  return "en";
 }
 
 export function getLocale() {
   return locale;
 }
 
-/** @param {'zh'|'en'|string} next */
+export function getLocaleMeta(id = locale) {
+  return LOCALES.find((l) => l.id === id) || LOCALES.find((l) => l.id === "en");
+}
+
+/** @param {string} next */
 export function setLocale(next) {
   if (!SUPPORTED.includes(next)) return locale;
-  locale = /** @type {'zh'|'en'} */ (next);
+  locale = next;
   try {
     localStorage.setItem(LOCALE_KEY, locale);
   } catch (_) {}
@@ -654,7 +81,8 @@ export function setLocale(next) {
 
 export function applyDocumentLang() {
   if (typeof document === "undefined") return;
-  document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
+  const meta = getLocaleMeta();
+  document.documentElement.lang = meta?.htmlLang || "en";
 }
 
 /**
@@ -662,8 +90,8 @@ export function applyDocumentLang() {
  * @param {Record<string, string|number>=} vars
  */
 export function t(key, vars) {
-  const table = dict[locale] || dict.zh;
-  let s = table[key] ?? dict.zh[key] ?? key;
+  const table = dict[locale] || dict.en;
+  let s = table[key] ?? dict.en[key] ?? dict.zh[key] ?? key;
   if (vars) {
     for (const [k, v] of Object.entries(vars)) {
       s = s.replaceAll(`{${k}}`, String(v));
@@ -679,12 +107,36 @@ export function revealLabelForOs(os) {
   return t("reveal.darwin");
 }
 
+/** BCP 47 tag for Number/Date formatting. */
+export function localeBcp47() {
+  return getLocaleMeta()?.bcp47 || "en-US";
+}
+
+/** Whether locale uses 万/亿 style token formatting. */
+export function usesChineseUnits() {
+  return locale === "zh" || locale === "zh-TW";
+}
+
 /**
- * Best-effort translate of backend (Go) messages when UI is English.
+ * Best-effort translate of backend (Go) messages when UI is not Chinese.
  * @param {string} msg
  */
 export function tb(msg) {
-  if (!msg || locale === "zh") return msg;
+  if (!msg) return msg;
+  if (locale === "zh" || locale === "zh-TW") {
+    if (locale === "zh-TW" && typeof msg === "string") {
+      // light traditional for common backend phrases
+      return msg
+        .replaceAll("厂家", "廠家")
+        .replaceAll("配置", "設定")
+        .replaceAll("失败", "失敗")
+        .replaceAll("成功", "成功")
+        .replaceAll("请", "請")
+        .replaceAll("连接", "連線")
+        .replaceAll("模型", "模型");
+    }
+    return msg;
+  }
   const m = String(msg);
 
   const exact = {

@@ -17,8 +17,10 @@ import (
 type ToolKind string
 
 const (
-	ToolCodex  ToolKind = "codex"
-	ToolClaude ToolKind = "claude"
+	ToolCodex    ToolKind = "codex" // ChatGPT / Codex config paths
+	ToolClaude   ToolKind = "claude"
+	ToolOpenClaw ToolKind = "openclaw"
+	ToolHarness  ToolKind = "harness"
 )
 
 // ModelOption is a model entry discovered from a tool config.
@@ -49,8 +51,10 @@ type ToolConfigStatus struct {
 }
 
 type pathOverrides struct {
-	Codex  string `json:"codex"`
-	Claude string `json:"claude"`
+	Codex    string `json:"codex"`
+	Claude   string `json:"claude"`
+	OpenClaw string `json:"openclaw"`
+	Harness  string `json:"harness"`
 }
 
 func (a *App) overridesPath() string {
@@ -94,12 +98,13 @@ func firstExisting(paths []string) string {
 	return ""
 }
 
-// DiscoverToolConfigs auto-searches Codex and Claude Code config files.
+// DiscoverToolConfigs auto-searches registered tool config files.
 func (a *App) DiscoverToolConfigs() []ToolConfigStatus {
-	return []ToolConfigStatus{
-		a.resolveTool(ToolCodex),
-		a.resolveTool(ToolClaude),
+	out := make([]ToolConfigStatus, 0, len(toolRegistry))
+	for _, d := range toolRegistry {
+		out = append(out, a.resolveTool(toolKindFromDriverID(d.ToolID())))
 	}
+	return out
 }
 
 // GetToolConfig returns status for one tool kind: "codex" | "claude".
@@ -109,24 +114,45 @@ func (a *App) GetToolConfig(kind string) ToolConfigStatus {
 
 func (a *App) resolveTool(kind ToolKind) ToolConfigStatus {
 	st := ToolConfigStatus{Kind: string(kind), OS: goruntime.GOOS}
-	switch kind {
-	case ToolCodex:
-		st.Name = "Codex"
-		st.SearchPaths = codexSearchPaths()
-	case ToolClaude:
-		st.Name = "Claude Code"
-		st.SearchPaths = claudeSearchPaths()
-	default:
-		st.Message = "未知工具类型"
-		return st
+	// Map kind → driver (codex stored as kind "codex" for compat)
+	driverID := string(kind)
+	if kind == ToolCodex {
+		driverID = "chatgpt"
+	}
+	d := driverByID(driverID)
+	if d == nil {
+		// fallback legacy
+		switch kind {
+		case ToolCodex:
+			st.Name = "ChatGPT"
+			st.SearchPaths = codexSearchPaths()
+		case ToolClaude:
+			st.Name = "Claude Code"
+			st.SearchPaths = claudeSearchPaths()
+		default:
+			st.Message = "未知工具类型"
+			return st
+		}
+	} else {
+		st.Name = d.ToolName()
+		st.SearchPaths = d.DefaultPaths()
+		// expose kind for UI: keep codex/claude/openclaw/harness
+		if kind == ToolCodex {
+			st.Kind = "codex"
+		}
 	}
 
 	ov := a.loadOverrides()
 	override := ""
-	if kind == ToolCodex {
+	switch kind {
+	case ToolCodex:
 		override = strings.TrimSpace(ov.Codex)
-	} else {
+	case ToolClaude:
 		override = strings.TrimSpace(ov.Claude)
+	case ToolOpenClaw:
+		override = strings.TrimSpace(ov.OpenClaw)
+	case ToolHarness:
+		override = strings.TrimSpace(ov.Harness)
 	}
 
 	if override != "" {
@@ -158,14 +184,18 @@ func (a *App) resolveTool(kind ToolKind) ToolConfigStatus {
 	}
 
 	// default preferred path even if missing (OS-correct)
-	switch kind {
-	case ToolCodex:
-		st.Path = preferredCodexConfigPath()
-	case ToolClaude:
-		st.Path = preferredClaudeConfigPath()
-	default:
-		if len(st.SearchPaths) > 0 {
-			st.Path = st.SearchPaths[0]
+	if d != nil {
+		st.Path = d.PreferredPath()
+	} else {
+		switch kind {
+		case ToolCodex:
+			st.Path = preferredCodexConfigPath()
+		case ToolClaude:
+			st.Path = preferredClaudeConfigPath()
+		default:
+			if len(st.SearchPaths) > 0 {
+				st.Path = st.SearchPaths[0]
+			}
 		}
 	}
 	st.Found = false
@@ -379,6 +409,19 @@ func (a *App) PickToolConfig(kind string) (ToolConfigStatus, error) {
 			{DisplayName: "JSON (*.json)", Pattern: "*.json"},
 			{DisplayName: "All files (*.*)", Pattern: "*.*"},
 		}
+	case ToolOpenClaw:
+		title = "选择 OpenClaw 配置文件"
+		filters = []wailsruntime.FileFilter{
+			{DisplayName: "JSON (*.json)", Pattern: "*.json"},
+			{DisplayName: "All files (*.*)", Pattern: "*.*"},
+		}
+	case ToolHarness:
+		title = "选择 Harness 配置文件"
+		filters = []wailsruntime.FileFilter{
+			{DisplayName: "YAML (*.yaml;*.yml)", Pattern: "*.yaml;*.yml"},
+			{DisplayName: "JSON (*.json)", Pattern: "*.json"},
+			{DisplayName: "All files (*.*)", Pattern: "*.*"},
+		}
 	default:
 		return ToolConfigStatus{}, fmt.Errorf("未知工具类型: %s", kind)
 	}
@@ -418,6 +461,10 @@ func (a *App) SetToolConfigPath(kind, path string) (ToolConfigStatus, error) {
 		ov.Codex = path
 	case ToolClaude:
 		ov.Claude = path
+	case ToolOpenClaw:
+		ov.OpenClaw = path
+	case ToolHarness:
+		ov.Harness = path
 	default:
 		return ToolConfigStatus{}, fmt.Errorf("未知工具类型: %s", kind)
 	}
@@ -437,6 +484,10 @@ func (a *App) ClearToolConfigPath(kind string) (ToolConfigStatus, error) {
 		ov.Codex = ""
 	case ToolClaude:
 		ov.Claude = ""
+	case ToolOpenClaw:
+		ov.OpenClaw = ""
+	case ToolHarness:
+		ov.Harness = ""
 	default:
 		return ToolConfigStatus{}, fmt.Errorf("未知工具类型: %s", kind)
 	}

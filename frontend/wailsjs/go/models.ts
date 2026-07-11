@@ -88,6 +88,70 @@ export namespace main {
 	        this.name = source["name"];
 	    }
 	}
+	export class ModelGroupRouteView {
+	    id: string;
+	    providerId: string;
+	    providerName: string;
+	    providerModelId: string;
+	    priority: number;
+	    enabled: boolean;
+	    status: string;
+	    usedTokens: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ModelGroupRouteView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.providerId = source["providerId"];
+	        this.providerName = source["providerName"];
+	        this.providerModelId = source["providerModelId"];
+	        this.priority = source["priority"];
+	        this.enabled = source["enabled"];
+	        this.status = source["status"];
+	        this.usedTokens = source["usedTokens"];
+	    }
+	}
+	export class ModelGroupView {
+	    id: string;
+	    name: string;
+	    enabled: boolean;
+	    strategy: string;
+	    routes: ModelGroupRouteView[];
+	
+	    static createFrom(source: any = {}) {
+	        return new ModelGroupView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.enabled = source["enabled"];
+	        this.strategy = source["strategy"];
+	        this.routes = this.convertValues(source["routes"], ModelGroupRouteView);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class ModelOption {
 	    id: string;
 	    name: string;
@@ -162,6 +226,7 @@ export namespace main {
 	    color: string;
 	    models: ProviderModel[];
 	    useProxy?: boolean;
+	    formatStandard: string;
 	    tokenPackages: TokenPackage[];
 	
 	    static createFrom(source: any = {}) {
@@ -177,6 +242,7 @@ export namespace main {
 	        this.color = source["color"];
 	        this.models = this.convertValues(source["models"], ProviderModel);
 	        this.useProxy = source["useProxy"];
+	        this.formatStandard = source["formatStandard"];
 	        this.tokenPackages = this.convertValues(source["tokenPackages"], TokenPackage);
 	    }
 	

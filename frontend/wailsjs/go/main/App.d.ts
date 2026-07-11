@@ -36,11 +36,17 @@ export function GetToolConfig(arg1:string):Promise<main.ToolConfigStatus>;
 
 export function GetUsageStats():Promise<main.UsageStats>;
 
+export function InjectGateway(arg1:string):Promise<main.ToolConfigStatus>;
+
+export function ListModelGroups():Promise<Array<main.ModelGroupView>>;
+
 export function ListProviders():Promise<Array<main.Provider>>;
 
 export function PickToolConfig(arg1:string):Promise<main.ToolConfigStatus>;
 
 export function ReadConfigText(arg1:string):Promise<string>;
+
+export function ReorderModelGroupRoutes(arg1:string,arg2:Array<string>):Promise<void>;
 
 export function RestoreCodexOriginalBases():Promise<main.ToolConfigStatus>;
 
@@ -48,9 +54,15 @@ export function RestoreDefaultConfig(arg1:string):Promise<main.ToolConfigStatus>
 
 export function RevealConfigPath(arg1:string):Promise<void>;
 
+export function RollbackGateway(arg1:string):Promise<main.ToolConfigStatus>;
+
 export function SaveProviders(arg1:Array<main.Provider>):Promise<void>;
 
 export function SaveProxyConfig(arg1:main.ProxyConfig):Promise<main.ProxyStatus>;
+
+export function SetModelGroupRouteEnabled(arg1:string,arg2:boolean):Promise<void>;
+
+export function SetModelGroupRoutePriority(arg1:string,arg2:number):Promise<void>;
 
 export function SetToolConfigPath(arg1:string,arg2:string):Promise<main.ToolConfigStatus>;
 

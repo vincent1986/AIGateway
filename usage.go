@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -88,7 +89,7 @@ func saveUsageFile(f usageFile) error {
 	return os.WriteFile(usageStorePath(), b, 0o600)
 }
 
-// recordUsage appends one usage event (thread-safe).
+// recordUsage appends one usage event (thread-safe). Prefers SQLite (V2).
 func recordUsage(provider, model, endpoint string, status, inTok, outTok, total int) {
 	if inTok == 0 && outTok == 0 && total == 0 {
 		// still record call counts with zero tokens (errors may skip)
@@ -113,6 +114,31 @@ func recordUsage(provider, model, endpoint string, status, inTok, outTok, total 
 	}
 	usageMu.Lock()
 	defer usageMu.Unlock()
+
+	// Primary: SQLite
+	if db, err := openDB(); err == nil {
+		_, _ = db.Exec(`INSERT INTO usage_events(time, provider_id, provider_name, model, group_id, endpoint, status, input_tokens, output_tokens, total_tokens)
+			VALUES(?,?,?,?,?,?,?,?,?,?)`,
+			ev.Time, "", ev.Provider, ev.Model, ev.Model, ev.Endpoint, ev.Status, ev.InputTokens, ev.OutputTokens, ev.TotalTokens)
+		// bump matching route used_tokens (model group id == client model)
+		if total > 0 && ev.Model != "" {
+			_, _ = db.Exec(`UPDATE model_group_routes SET used_tokens = used_tokens + ?
+				WHERE group_id = ? AND provider_id IN (
+					SELECT id FROM providers WHERE lower(name) = lower(?) OR lower(id) = lower(?)
+				)`, total, ev.Model, ev.Provider, ev.Provider)
+		}
+		// trim old events keep last 10000
+		var cnt int
+		_ = db.QueryRow(`SELECT COUNT(1) FROM usage_events`).Scan(&cnt)
+		if cnt > 10000 {
+			_, _ = db.Exec(`DELETE FROM usage_events WHERE id IN (
+				SELECT id FROM usage_events ORDER BY id ASC LIMIT ?
+			)`, cnt-10000)
+		}
+		return
+	}
+
+	// Fallback JSON
 	f := loadUsageFile()
 	f.Events = append(f.Events, ev)
 	_ = saveUsageFile(f)
@@ -222,8 +248,46 @@ func tokensFromUsageMap(u map[string]any) (in, out, total int) {
 func (a *App) GetUsageStats() UsageStats {
 	usageMu.Lock()
 	defer usageMu.Unlock()
+	if db, err := openDB(); err == nil {
+		if st, err2 := loadUsageStatsFromDB(db); err2 == nil {
+			return st
+		}
+	}
 	f := loadUsageFile()
 	return aggregateUsage(f.Events)
+}
+
+func loadUsageStatsFromDB(db *sql.DB) (UsageStats, error) {
+	rows, err := db.Query(`SELECT time, provider_name, model, endpoint, status, input_tokens, output_tokens, total_tokens
+		FROM usage_events ORDER BY id ASC`)
+	if err != nil {
+		return UsageStats{}, err
+	}
+	defer rows.Close()
+	var events []UsageEvent
+	for rows.Next() {
+		var e UsageEvent
+		var t string
+		if err := rows.Scan(&t, &e.Provider, &e.Model, &e.Endpoint, &e.Status, &e.InputTokens, &e.OutputTokens, &e.TotalTokens); err != nil {
+			return UsageStats{}, err
+		}
+		e.Time = t
+		if len(t) >= 10 {
+			e.Day = t[:10]
+			// RFC3339 may have T — normalize day
+			if i := strings.Index(t, "T"); i == 10 {
+				e.Day = t[:10]
+			} else if len(t) >= 10 {
+				e.Day = t[:10]
+			}
+		}
+		// local day from RFC3339
+		if parsed, err := time.Parse(time.RFC3339, t); err == nil {
+			e.Day = parsed.Local().Format("2006-01-02")
+		}
+		events = append(events, e)
+	}
+	return aggregateUsage(events), rows.Err()
 }
 
 // ProviderPackageStatus is quota vs usage for one vendor's active token package.
@@ -249,17 +313,8 @@ func (a *App) GetProviderPackageStatuses() []ProviderPackageStatus {
 		return nil
 	}
 	usageMu.Lock()
-	f := loadUsageFile()
+	usedBy := loadProxyUsedByProvider()
 	usageMu.Unlock()
-	// map provider name/id → total tokens used
-	usedBy := map[string]int64{}
-	for _, e := range f.Events {
-		k := strings.TrimSpace(e.Provider)
-		if k == "" {
-			continue
-		}
-		usedBy[strings.ToLower(k)] += int64(e.TotalTokens)
-	}
 
 	out := make([]ProviderPackageStatus, 0, len(list))
 	for _, p := range list {
@@ -320,10 +375,39 @@ func (a *App) GetProviderPackageStatuses() []ProviderPackageStatus {
 func (a *App) ClearUsageStats() (UsageStats, error) {
 	usageMu.Lock()
 	defer usageMu.Unlock()
-	if err := saveUsageFile(usageFile{Version: 1, Events: []UsageEvent{}}); err != nil {
-		return UsageStats{}, err
+	if db, err := openDB(); err == nil {
+		_, _ = db.Exec(`DELETE FROM usage_events`)
+		_, _ = db.Exec(`UPDATE model_group_routes SET used_tokens = 0`)
 	}
+	_ = saveUsageFile(usageFile{Version: 1, Events: []UsageEvent{}})
 	return aggregateUsage(nil), nil
+}
+
+func loadProxyUsedByProvider() map[string]int64 {
+	usedBy := map[string]int64{}
+	if db, err := openDB(); err == nil {
+		rows, err := db.Query(`SELECT provider_name, SUM(total_tokens) FROM usage_events GROUP BY provider_name`)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var name string
+				var sum int64
+				if rows.Scan(&name, &sum) == nil {
+					usedBy[strings.ToLower(strings.TrimSpace(name))] = sum
+				}
+			}
+			return usedBy
+		}
+	}
+	f := loadUsageFile()
+	for _, e := range f.Events {
+		k := strings.TrimSpace(e.Provider)
+		if k == "" {
+			continue
+		}
+		usedBy[strings.ToLower(k)] += int64(e.TotalTokens)
+	}
+	return usedBy
 }
 
 func aggregateUsage(events []UsageEvent) UsageStats {

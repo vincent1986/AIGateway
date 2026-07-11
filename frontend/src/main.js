@@ -1,6 +1,6 @@
 import "./style.css";
 import "./app.css";
-import { t, getLocale, setLocale, revealLabelForOs, tb } from "./i18n.js";
+import { t, getLocale, setLocale, getLocaleMeta, LOCALES, revealLabelForOs, tb, localeBcp47, usesChineseUnits } from "./i18n.js";
 
 import {
   DiscoverToolConfigs,
@@ -28,23 +28,47 @@ import {
   GetUsageStats,
   ClearUsageStats,
   GetProviderPackageStatuses,
+  ListModelGroups,
+  SetModelGroupRoutePriority,
+  SetModelGroupRouteEnabled,
+  ReorderModelGroupRoutes,
+  InjectGateway,
+  RollbackGateway,
 } from "../wailsjs/go/main/App";
 
 /** @typedef {{ id: string, name: string, baseUrl: string, apiKey: string, color: string, models: Model[] }} Provider */
 /** @typedef {{ id: string, name: string, enabled: boolean, isDefault: boolean, ownedBy?: string }} Model */
 /** @typedef {{ kind: string, name: string, path: string, found: boolean, exists: boolean, model: string, modelProvider: string, searchPaths: string[], candidates: {id:string,name:string,provider:string}[], source: string, message: string, hasDefaultBackup?: boolean, defaultBackupAt?: string }} ToolConfigStatus */
 
-const COLORS = ["#3d8bfd", "#7c5cff", "#3fb950", "#d29922", "#f85149", "#39c5cf", "#e85d9a"];
+const COLORS = ["#3d8bfd", "#7c5cff", "#3fb950", "#d29922", "#f85149", "#39c5cf", "#e85d9a", "#3859ff", "#a371f7"];
+
+/**
+ * Built-in provider preset library (PRD 3.2).
+ * User picks a card → only fills API Key for most cloud vendors.
+ * @type {Array<{
+ *   id: string, name: string, nameKey?: string|null, baseUrl: string, color: string,
+ *   useProxy: boolean, formatStandard?: string, apiKey?: string, keyRequired?: boolean,
+ *   local?: boolean, region?: string, blurbKey?: string
+ * }>}
+ */
 const PRESETS = [
-  { nameKey: null, name: "Ollama", baseUrl: "http://127.0.0.1:11434/v1", color: "#c4c4c4", useProxy: false, apiKey: "ollama" },
-  { nameKey: null, name: "OpenAI", baseUrl: "https://api.openai.com/v1", color: "#3d8bfd", useProxy: true },
-  { nameKey: null, name: "Anthropic", baseUrl: "https://api.anthropic.com/v1", color: "#d29922", useProxy: true },
-  { nameKey: null, name: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", color: "#3fb950", useProxy: true },
-  { nameKey: "preset.qwen", name: "通义千问", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", color: "#7c5cff", useProxy: true },
-  { nameKey: null, name: "Moonshot", baseUrl: "https://api.moonshot.cn/v1", color: "#39c5cf", useProxy: true },
-  { nameKey: "preset.zhipu", name: "清华智谱", baseUrl: "https://open.bigmodel.cn/api/paas/v4", color: "#3859ff", useProxy: true },
-  { nameKey: null, name: "MiniMax", baseUrl: "https://api.minimax.chat/v1", color: "#e85d9a", useProxy: true },
-  { nameKey: "preset.custom", name: "自定义", baseUrl: "https://", color: "#8b9cb3", useProxy: true },
+  { id: "ollama", name: "Ollama", baseUrl: "http://127.0.0.1:11434/v1", color: "#c4c4c4", useProxy: false, formatStandard: "openai", apiKey: "ollama", keyRequired: false, local: true, region: "local", blurbKey: "preset.blurb.local" },
+  { id: "deepseek", name: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", color: "#3fb950", useProxy: true, formatStandard: "openai", keyRequired: true, region: "cn", blurbKey: "preset.blurb.deepseek" },
+  { id: "siliconflow", nameKey: "preset.siliconflow", name: "硅基流动", baseUrl: "https://api.siliconflow.cn/v1", color: "#7c5cff", useProxy: true, formatStandard: "openai", keyRequired: true, region: "cn", blurbKey: "preset.blurb.silicon" },
+  { id: "openai", name: "OpenAI", baseUrl: "https://api.openai.com/v1", color: "#3d8bfd", useProxy: true, formatStandard: "openai", keyRequired: true, region: "global" },
+  { id: "anthropic", name: "Anthropic", baseUrl: "https://api.anthropic.com/v1", color: "#d29922", useProxy: true, formatStandard: "openai", keyRequired: true, region: "global" },
+  { id: "qwen", nameKey: "preset.qwen", name: "通义千问", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", color: "#7c5cff", useProxy: true, formatStandard: "openai", keyRequired: true, region: "cn" },
+  { id: "moonshot", name: "Moonshot", baseUrl: "https://api.moonshot.cn/v1", color: "#39c5cf", useProxy: true, formatStandard: "openai", keyRequired: true, region: "cn" },
+  { id: "zhipu", nameKey: "preset.zhipu", name: "智谱", baseUrl: "https://open.bigmodel.cn/api/paas/v4", color: "#3859ff", useProxy: true, formatStandard: "openai", keyRequired: true, region: "cn" },
+  { id: "minimax", name: "MiniMax", baseUrl: "https://api.minimax.chat/v1", color: "#e85d9a", useProxy: true, formatStandard: "openai", keyRequired: true, region: "cn" },
+  { id: "doubao", nameKey: "preset.doubao", name: "豆包/火山", baseUrl: "https://ark.cn-beijing.volces.com/api/v3", color: "#3d8bfd", useProxy: true, formatStandard: "openai", keyRequired: true, region: "cn" },
+  { id: "yi", nameKey: "preset.yi", name: "零一万物", baseUrl: "https://api.lingyiwanwu.com/v1", color: "#a371f7", useProxy: true, formatStandard: "openai", keyRequired: true, region: "cn" },
+  { id: "groq", name: "Groq", baseUrl: "https://api.groq.com/openai/v1", color: "#f85149", useProxy: true, formatStandard: "openai", keyRequired: true, region: "global" },
+  { id: "openrouter", name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", color: "#7c5cff", useProxy: true, formatStandard: "openai", keyRequired: true, region: "global" },
+  { id: "xai", name: "xAI Grok", baseUrl: "https://api.x.ai/v1", color: "#e6edf3", useProxy: true, formatStandard: "openai", keyRequired: true, region: "global" },
+  { id: "together", name: "Together", baseUrl: "https://api.together.xyz/v1", color: "#3fb950", useProxy: true, formatStandard: "openai", keyRequired: true, region: "global" },
+  { id: "fireworks", name: "Fireworks", baseUrl: "https://api.fireworks.ai/inference/v1", color: "#d29922", useProxy: true, formatStandard: "openai", keyRequired: true, region: "global" },
+  { id: "custom", nameKey: "preset.custom", name: "自定义", baseUrl: "", color: "#8b9cb3", useProxy: true, formatStandard: "openai", keyRequired: true, region: "custom", blurbKey: "preset.blurb.custom" },
 ];
 
 function presetDisplayName(p) {
@@ -52,7 +76,18 @@ function presetDisplayName(p) {
 }
 
 function isCustomPreset(p) {
-  return p.nameKey === "preset.custom";
+  return p.id === "custom" || p.nameKey === "preset.custom";
+}
+
+function presetStableId(p) {
+  return p.id || slugifyClient(presetDisplayName(p));
+}
+
+function slugifyClient(s) {
+  return String(s || "custom")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_|_$/g, "") || "custom";
 }
 
 const STORAGE_KEY = "codex.providers.v1";
@@ -69,10 +104,18 @@ let testing = false;
 let testResult = null;
 let modelQuery = "";
 let booting = true;
-/** @type {'providers'|'configs'|'proxy'|'usage'} */
-let page = ["configs", "proxy", "usage"].includes(localStorage.getItem(PAGE_KEY) || "")
-  ? localStorage.getItem(PAGE_KEY)
-  : "providers";
+/** @type {'providers'|'models'|'apps'|'configs'|'proxy'|'usage'} */
+let page = (() => {
+  const raw = localStorage.getItem(PAGE_KEY) || "";
+  if (raw === "configs") return "apps";
+  if (["models", "apps", "proxy", "usage"].includes(raw)) return raw;
+  return "providers";
+})();
+
+/** @type {any[]} */
+let modelGroups = [];
+let modelsLoading = false;
+let modelsBusy = "";
 
 /** @type {null | { total?: any, byDay?: any[], byModel?: any[], byProvider?: any[], recent?: any[] }} */
 let usageStats = null;
@@ -179,6 +222,8 @@ function normalizeProvider(p) {
       else sawActive = true;
     }
   }
+  let formatStandard = p.formatStandard || p.FormatStandard || "openai";
+  if (formatStandard !== "passthrough") formatStandard = "openai";
   return {
     id: p.id || uid(),
     name,
@@ -186,6 +231,7 @@ function normalizeProvider(p) {
     apiKey: p.apiKey || p.APIKey || "",
     color: p.color || COLORS[0],
     useProxy,
+    formatStandard,
     tokenPackages: pkgs,
     models: (p.models || []).map((m) => ({
       id: m.id,
@@ -199,15 +245,15 @@ function normalizeProvider(p) {
 
 function formatTokens(n) {
   n = Number(n) || 0;
-  if (getLocale() === "zh") {
+  if (usesChineseUnits()) {
     if (n >= 1e8) return (n / 1e8).toFixed(2) + " " + t("unit.yi");
     if (n >= 1e4) return (n / 1e4).toFixed(2) + " " + t("unit.wan");
-    return n.toLocaleString("zh-CN");
+    return n.toLocaleString(localeBcp47());
   }
   if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
   if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
   if (n >= 1e3) return (n / 1e3).toFixed(2) + "K";
-  return n.toLocaleString("en-US");
+  return n.toLocaleString(localeBcp47());
 }
 
 function providerPackageStatus(p) {
@@ -473,15 +519,27 @@ function render() {
         </div>
         <nav class="nav-tabs">
           <button class="nav-tab ${page === "providers" ? "active" : ""}" data-page="providers">${t("nav.providers")}</button>
-          <button class="nav-tab ${page === "configs" ? "active" : ""}" data-page="configs">${t("nav.configs")}</button>
+          <button class="nav-tab ${page === "models" ? "active" : ""}" data-page="models">${t("nav.models")}</button>
+          <button class="nav-tab ${page === "apps" || page === "configs" ? "active" : ""}" data-page="apps">${t("nav.apps")}</button>
           <button class="nav-tab ${page === "proxy" ? "active" : ""}" data-page="proxy">${t("nav.proxy")}</button>
           <button class="nav-tab ${page === "usage" ? "active" : ""}" data-page="usage">${t("nav.usage")}</button>
         </nav>
       </div>
       <div class="topbar-meta">
-        <div class="lang-switch" title="${escapeAttr(t("lang.switch"))}">
-          <button type="button" class="lang-btn ${getLocale() === "zh" ? "active" : ""}" data-lang="zh">${t("lang.zh")}</button>
-          <button type="button" class="lang-btn ${getLocale() === "en" ? "active" : ""}" data-lang="en">${t("lang.en")}</button>
+        <div class="lang-picker" id="lang-picker">
+          <button type="button" class="lang-picker-btn" id="lang-picker-btn" title="${escapeAttr(t("lang.switch"))}" aria-haspopup="listbox" aria-expanded="false">
+            <span class="lang-picker-icon">🌐</span>
+            <span class="lang-picker-label">${escapeHtml(getLocaleMeta()?.native || "EN")}</span>
+            <span class="lang-picker-caret">▾</span>
+          </button>
+          <div class="lang-popup" id="lang-popup" role="listbox" hidden>
+            ${LOCALES.map(
+              (l) => `
+              <button type="button" class="lang-option ${getLocale() === l.id ? "active" : ""}" role="option" data-lang="${escapeAttr(l.id)}" aria-selected="${getLocale() === l.id}">
+                <span class="lang-option-native">${escapeHtml(l.native)}</span>
+              </button>`
+            ).join("")}
+          </div>
         </div>
         <span class="stat-pill">${escapeHtml(systemInfo.platformName || "")}</span>
         <span class="stat-pill">${t("stat.providers")} <strong>${providers.length}</strong></span>
@@ -497,17 +555,20 @@ function render() {
     ${
       page === "providers"
         ? renderProvidersPage()
-        : page === "proxy"
-          ? renderProxyPage()
-          : page === "usage"
-            ? renderUsagePage()
-            : renderConfigsPage()
+        : page === "models"
+          ? renderModelsPage()
+          : page === "proxy"
+            ? renderProxyPage()
+            : page === "usage"
+              ? renderUsagePage()
+              : renderConfigsPage()
     }
     <div class="toast-host" id="toast-host"></div>
     <div id="modal-root"></div>
   `;
   bindShellEvents();
   if (page === "providers") bindProviderEvents();
+  else if (page === "models") bindModelsEvents();
   else if (page === "proxy") bindProxyEvents();
   else if (page === "usage") bindUsageEvents();
   else bindConfigEvents();
@@ -689,8 +750,10 @@ function renderProvidersPage() {
 }
 
 function renderConfigsPage() {
-  const codex = toolConfigs.codex;
-  const claude = toolConfigs.claude;
+  const cards = ["codex", "claude", "openclaw", "harness"].map((k) => {
+    const names = { codex: "ChatGPT", claude: "Claude Code", openclaw: "OpenClaw", harness: "Harness" };
+    return toolConfigs[k] || placeholder(k, names[k] || k);
+  });
   return `
     <div class="full-page">
       <div class="config-page">
@@ -705,13 +768,245 @@ function renderConfigsPage() {
             </button>
           </div>
         </div>
-        <div class="config-grid">
-          ${renderToolCard(codex || placeholder("codex", "Codex"))}
-          ${renderToolCard(claude || placeholder("claude", "Claude Code"))}
+        <div class="apps-grid">
+          ${cards.map((st) => renderAppCard(st)).join("")}
         </div>
       </div>
     </div>
   `;
+}
+
+function statusTagForTool(st) {
+  if (st.found && st.exists) {
+    const mp = (st.modelProvider || "").toLowerCase();
+    const pathOk = !!(st.path);
+    if (mp.includes("aigateway") || mp.includes("codex_proxy")) {
+      return `<span class="tag ok">${t("apps.takenOver")}</span>`;
+    }
+    return `<span class="tag ok">${t("configs.located")}</span>`;
+  }
+  return `<span class="tag off">${t("configs.notFound")}</span>`;
+}
+
+function renderAppCard(st) {
+  const kind = st.kind;
+  const busy = configsBusy === kind;
+  const ok = !!st.found && !!st.exists;
+  return `
+    <section class="config-card app-card" data-kind="${escapeAttr(kind)}">
+      <div class="config-card-head">
+        <h3>
+          <span class="status-dot ${ok ? "ok" : "fail"}"></span>
+          ${escapeHtml(st.name || kind)}
+        </h3>
+        <div class="meta-row">${statusTagForTool(st)}</div>
+      </div>
+      <div class="config-card-body">
+        <div class="path-box">
+          <label style="font-size:12px;color:var(--text-secondary);font-weight:500">${t("configs.pathLabel")}</label>
+          <div class="path-value ${ok ? "" : "missing"}">${escapeHtml(st.path || t("common.dash"))}</div>
+        </div>
+        <div class="hint">${t("apps.takeoverHint")}</div>
+        <div class="actions" style="margin-top:10px;flex-wrap:wrap">
+          <button class="btn btn-primary" data-act="takeover" data-kind="${kind}" ${busy ? "disabled" : ""}>
+            ${busy ? `<span class="spinner"></span>` : t("apps.takeover")}
+          </button>
+          <button class="btn" data-act="rollback-gw" data-kind="${kind}" ${busy || !st.hasDefaultBackup ? "disabled" : ""}>
+            ${t("apps.rollback")}
+          </button>
+          <button class="btn btn-sm" data-act="scan" data-kind="${kind}" ${busy ? "disabled" : ""}>${t("configs.autoScan")}</button>
+          <button class="btn btn-sm" data-act="pick" data-kind="${kind}" ${busy ? "disabled" : ""}>${t("configs.pick")}</button>
+          <button class="btn btn-sm" data-act="reveal" data-kind="${kind}" ${!st.path ? "disabled" : ""}>${escapeHtml(revealLabelForOs(systemInfo.os))}</button>
+        </div>
+        <div class="config-msg ${ok ? "ok" : st.message ? "warn" : ""}">${escapeHtml(tb(st.message || ""))}</div>
+        ${
+          configPreview[kind]
+            ? `<pre class="preview-box" style="max-height:120px">${escapeHtml((configPreview[kind] || "").slice(0, 600))}</pre>`
+            : ""
+        }
+      </div>
+    </section>
+  `;
+}
+
+function routeStatusLabel(status) {
+  const s = (status || "ok").toLowerCase();
+  if (s === "standby") return t("models.statusStandby");
+  if (s === "disabled") return t("models.statusDisabled");
+  if (s === "exhausted") return t("models.statusExhausted");
+  if (s === "circuit_open") return t("models.statusCircuit");
+  return t("models.statusOk");
+}
+
+function routeStatusClass(status) {
+  const s = (status || "ok").toLowerCase();
+  if (s === "standby") return "warn";
+  if (s === "disabled") return "off";
+  if (s === "exhausted" || s === "circuit_open") return "err";
+  return "ok";
+}
+
+function renderModelsPage() {
+  return `
+    <div class="full-page">
+      <div class="config-page">
+        <div class="config-hero">
+          <div>
+            <h2>${t("models.title")}</h2>
+            <p>${t("models.desc")} ${t("models.dragHint")}</p>
+          </div>
+          <div class="actions">
+            <button class="btn" id="btn-models-refresh" ${modelsLoading ? "disabled" : ""}>
+              ${modelsLoading ? `<span class="spinner"></span>` : t("models.refresh")}
+            </button>
+          </div>
+        </div>
+        ${
+          modelGroups.length
+            ? modelGroups
+                .map((g) => {
+                  const routes = (g.routes || g.Routes || [])
+                    .slice()
+                    .sort((a, b) => (a.priority ?? a.Priority ?? 0) - (b.priority ?? b.Priority ?? 0));
+                  return `
+            <section class="panel model-group-panel" data-group="${escapeAttr(g.id)}">
+              <div class="panel-head">
+                <div>
+                  <h3 class="model-id">${escapeHtml(g.name || g.id)}</h3>
+                  <p class="desc">${routes.length} ${t("models.channels")}</p>
+                </div>
+              </div>
+              <div class="panel-body">
+                <div class="route-list" data-group="${escapeAttr(g.id)}">
+                  ${
+                    routes.length
+                      ? routes
+                          .map((r, i) => {
+                            const rid = r.id || r.ID;
+                            const prio = r.priority ?? r.Priority ?? 0;
+                            const used = r.usedTokens ?? r.UsedTokens ?? 0;
+                            const status = r.status || r.Status || "ok";
+                            const en = !!(r.enabled ?? r.Enabled);
+                            return `
+                    <div class="route-row ${i === 0 ? "primary" : ""}" draggable="true" data-route="${escapeAttr(rid)}" data-group="${escapeAttr(g.id)}">
+                      <span class="drag-handle" title="${escapeAttr(t("models.drag"))}">⠿</span>
+                      <div class="route-meta">
+                        <div class="provider-name">${escapeHtml(r.providerName || r.ProviderName || r.providerId || "")}</div>
+                        <div class="hint mono">${escapeHtml(r.providerModelId || r.ProviderModelID || "")}</div>
+                      </div>
+                      <span class="tag ${routeStatusClass(status)}">${routeStatusLabel(status)}</span>
+                      <span class="model-id prio-badge">#${prio}</span>
+                      <span class="model-id used-badge">${Number(used).toLocaleString()}</span>
+                      <button class="btn btn-sm" data-act="route-toggle" ${modelsBusy ? "disabled" : ""}>${en ? t("models.disable") : t("models.enable")}</button>
+                    </div>`;
+                          })
+                          .join("")
+                      : `<div class="hint">${t("common.dash")}</div>`
+                  }
+                </div>
+              </div>
+            </section>`;
+                })
+                .join("")
+            : `<section class="panel"><div class="panel-body"><div class="empty-models"><strong>${t("models.empty")}</strong></div></div></section>`
+        }
+      </div>
+    </div>
+  `;
+}
+
+async function loadModelGroups() {
+  if (!hasBackend() || typeof ListModelGroups !== "function") {
+    modelGroups = [];
+    return;
+  }
+  modelsLoading = true;
+  try {
+    modelGroups = (await ListModelGroups()) || [];
+  } catch (e) {
+    toast(errMsg(e), "err");
+    modelGroups = [];
+  } finally {
+    modelsLoading = false;
+  }
+}
+
+function bindModelsEvents() {
+  document.getElementById("btn-models-refresh")?.addEventListener("click", async () => {
+    await loadModelGroups();
+    render();
+  });
+
+  // enable / disable
+  document.querySelectorAll(".route-row [data-act='route-toggle']").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const row = btn.closest(".route-row");
+      const rid = row?.dataset.route;
+      if (!rid) return;
+      const gid = row.dataset.group;
+      const g = modelGroups.find((x) => x.id === gid);
+      const list = g?.routes || g?.Routes || [];
+      const cur = list.find((x) => (x.id || x.ID) === rid);
+      const en = !!(cur?.enabled ?? cur?.Enabled);
+      modelsBusy = rid;
+      try {
+        await SetModelGroupRouteEnabled(rid, !en);
+        await loadModelGroups();
+      } catch (err) {
+        toast(errMsg(err), "err");
+      } finally {
+        modelsBusy = "";
+        render();
+      }
+    });
+  });
+
+  // drag-and-drop reorder within a group
+  document.querySelectorAll(".route-list").forEach((listEl) => {
+    let dragEl = null;
+    listEl.querySelectorAll(".route-row").forEach((row) => {
+      row.addEventListener("dragstart", (e) => {
+        dragEl = row;
+        row.classList.add("dragging");
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", row.dataset.route || "");
+      });
+      row.addEventListener("dragend", () => {
+        row.classList.remove("dragging");
+        listEl.querySelectorAll(".route-row").forEach((r) => r.classList.remove("drag-over"));
+        dragEl = null;
+      });
+      row.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        if (!dragEl || dragEl === row) return;
+        const rect = row.getBoundingClientRect();
+        const before = e.clientY < rect.top + rect.height / 2;
+        listEl.querySelectorAll(".route-row").forEach((r) => r.classList.remove("drag-over"));
+        row.classList.add("drag-over");
+        if (before) listEl.insertBefore(dragEl, row);
+        else listEl.insertBefore(dragEl, row.nextSibling);
+      });
+      row.addEventListener("drop", async (e) => {
+        e.preventDefault();
+        const gid = listEl.dataset.group;
+        const ids = [...listEl.querySelectorAll(".route-row")].map((r) => r.dataset.route).filter(Boolean);
+        if (!gid || !ids.length || typeof ReorderModelGroupRoutes !== "function") return;
+        modelsBusy = "reorder";
+        try {
+          await ReorderModelGroupRoutes(gid, ids);
+          await loadModelGroups();
+          toast(t("models.reordered"));
+        } catch (err) {
+          toast(errMsg(err), "err");
+        } finally {
+          modelsBusy = "";
+          render();
+        }
+      });
+    });
+  });
 }
 
 function placeholder(kind, name) {
@@ -1045,6 +1340,20 @@ function renderDetail(p) {
                 }
               </span>
             </div>
+            <div class="field full">
+              <label>${t("detail.formatStandard")}</label>
+              <div class="actions" style="margin-top:4px">
+                <label class="stat-pill" style="cursor:pointer;gap:8px">
+                  <input type="radio" name="f-format" id="f-format-openai" value="openai" ${(p.formatStandard || "openai") !== "passthrough" ? "checked" : ""} />
+                  ${t("detail.formatOpenAI")}
+                </label>
+                <label class="stat-pill" style="cursor:pointer;gap:8px">
+                  <input type="radio" name="f-format" id="f-format-pass" value="passthrough" ${p.formatStandard === "passthrough" ? "checked" : ""} />
+                  ${t("detail.formatPassthrough")}
+                </label>
+              </div>
+              <span class="hint">${t("detail.formatHint")}</span>
+            </div>
           </div>
           <div class="actions" style="margin-top:16px">
             <button class="btn btn-primary" id="btn-save">${t("detail.save")}</button>
@@ -1086,7 +1395,7 @@ function renderDetail(p) {
                   <th>${t("detail.colId")}</th>
                   <th>${t("detail.colName")}</th>
                   <th>${t("detail.colStatus")}</th>
-                  <th style="width:280px;text-align:right">${t("detail.colActions")}</th>
+                  <th style="width:120px;text-align:right">${t("detail.colActions")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1103,9 +1412,6 @@ function renderDetail(p) {
                     </td>
                     <td>
                       <div class="row-actions">
-                        <button class="btn btn-sm" data-act="default" ${m.isDefault || !m.enabled ? "disabled" : ""}>${t("detail.setDefault")}</button>
-                        <button class="btn btn-sm" data-act="to-codex" title="${escapeAttr(t("detail.toCodexTitle"))}">${t("detail.toCodex")}</button>
-                        <button class="btn btn-sm" data-act="to-claude" title="${escapeAttr(t("detail.toClaudeTitle"))}">${t("detail.toClaude")}</button>
                         <button class="btn btn-sm btn-ghost" data-act="remove">${t("detail.remove")}</button>
                       </div>
                     </td>
@@ -1131,7 +1437,7 @@ function formatBackupAt(iso) {
   try {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return iso;
-    return d.toLocaleString(getLocale() === "zh" ? "zh-CN" : "en-US");
+    return d.toLocaleString(localeBcp47());
   } catch {
     return iso;
   }
@@ -1209,11 +1515,16 @@ function bindShellEvents() {
   document.querySelectorAll(".nav-tab").forEach((el) => {
     el.addEventListener("click", () => {
       const p = el.dataset.page;
-      page = ["configs", "proxy", "usage"].includes(p) ? p : "providers";
+      if (p === "configs") page = "apps";
+      else if (["models", "apps", "proxy", "usage"].includes(p)) page = p;
+      else page = "providers";
       localStorage.setItem(PAGE_KEY, page);
       render();
-      if (page === "configs" && !Object.keys(toolConfigs).length) {
+      if ((page === "apps" || page === "configs") && !Object.keys(toolConfigs).length) {
         loadToolConfigs(false);
+      }
+      if (page === "models") {
+        loadModelGroups().then(() => render());
       }
       if (page === "proxy") {
         refreshProxyStatus();
@@ -1223,9 +1534,49 @@ function bindShellEvents() {
       }
     });
   });
-  document.querySelectorAll(".lang-btn").forEach((el) => {
-    el.addEventListener("click", () => {
+  const picker = document.getElementById("lang-picker");
+  const btn = document.getElementById("lang-picker-btn");
+  const popup = document.getElementById("lang-popup");
+  let outsideBound = false;
+  const onDoc = (e) => {
+    if (!picker?.contains(e.target)) closePopup();
+  };
+  const onKey = (e) => {
+    if (e.key === "Escape") closePopup();
+  };
+  const closePopup = () => {
+    if (!popup || !btn) return;
+    popup.hidden = true;
+    btn.setAttribute("aria-expanded", "false");
+    if (outsideBound) {
+      document.removeEventListener("click", onDoc);
+      document.removeEventListener("keydown", onKey);
+      outsideBound = false;
+    }
+  };
+  const openPopup = () => {
+    if (!popup || !btn) return;
+    popup.hidden = false;
+    btn.setAttribute("aria-expanded", "true");
+    if (!outsideBound) {
+      // defer so the opening click doesn't immediately close
+      setTimeout(() => {
+        document.addEventListener("click", onDoc);
+        document.addEventListener("keydown", onKey);
+        outsideBound = true;
+      }, 0);
+    }
+  };
+  btn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (popup?.hidden) openPopup();
+    else closePopup();
+  });
+  popup?.querySelectorAll(".lang-option").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
       const next = el.dataset.lang;
+      closePopup();
       if (!next || next === getLocale()) return;
       setLocale(next);
       render();
@@ -1526,6 +1877,46 @@ function bindUsageEvents() {
 function bindConfigEvents() {
   document.getElementById("btn-rescan")?.addEventListener("click", () => loadToolConfigs(true));
 
+  document.querySelectorAll("[data-act='takeover']").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const kind = btn.dataset.kind;
+      configsBusy = kind;
+      render();
+      try {
+        if (!hasBackend()) throw new Error(t("toast.runInWailsShort"));
+        const st = await InjectGateway(kind);
+        await applyToolStatus(st);
+        toast(st.message || t("apps.takenOver"));
+      } catch (e) {
+        toast(errMsg(e), "err");
+      } finally {
+        configsBusy = "";
+        render();
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-act='rollback-gw']").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const kind = btn.dataset.kind;
+      const name = toolConfigs[kind]?.name || kind;
+      if (!confirm(t("confirm.restoreDefault", { name }))) return;
+      configsBusy = kind;
+      render();
+      try {
+        if (!hasBackend()) throw new Error(t("toast.runInWailsShort"));
+        const st = await RollbackGateway(kind);
+        await applyToolStatus(st);
+        toast(st.message || t("toast.restored"));
+      } catch (e) {
+        toast(errMsg(e), "err");
+      } finally {
+        configsBusy = "";
+        render();
+      }
+    });
+  });
+
   document.querySelectorAll("[data-act='scan']").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const kind = btn.dataset.kind;
@@ -1807,6 +2198,8 @@ function readFormInto(p) {
   if (color) p.color = color.value;
   const proxyOn = document.getElementById("f-proxy-on");
   if (proxyOn) p.useProxy = !!proxyOn.checked;
+  const fmtPass = document.getElementById("f-format-pass");
+  if (fmtPass) p.formatStandard = fmtPass.checked ? "passthrough" : "openai";
 }
 
 async function applyModelToTool(kind, modelId) {
@@ -2249,39 +2642,122 @@ function openPackageModal(provider, existing) {
 
 function openAddModal() {
   const root = document.getElementById("modal-root");
+  let presetIdx = 1; // default DeepSeek (index 1 after Ollama)
+  if (!PRESETS[presetIdx]) presetIdx = 0;
+
+  const renderPresetGrid = () => {
+    const regions = [
+      { id: "local", label: t("modal.region.local") },
+      { id: "cn", label: t("modal.region.cn") },
+      { id: "global", label: t("modal.region.global") },
+      { id: "custom", label: t("modal.region.custom") },
+    ];
+    return regions
+      .map((reg) => {
+        const items = PRESETS.map((p, i) => ({ p, i })).filter(({ p }) => (p.region || "global") === reg.id);
+        if (!items.length) return "";
+        return `
+          <div class="preset-region">
+            <div class="preset-region-label">${escapeHtml(reg.label)}</div>
+            <div class="preset-grid">
+              ${items
+                .map(
+                  ({ p, i }) => `
+                <button type="button" class="preset-chip ${i === presetIdx ? "active" : ""}" data-preset="${i}" style="--chip:${p.color}">
+                  <span class="preset-chip-dot" style="background:${p.color}"></span>
+                  <span class="preset-chip-name">${escapeHtml(presetDisplayName(p))}</span>
+                </button>`
+                )
+                .join("")}
+            </div>
+          </div>`;
+      })
+      .join("");
+  };
+
+  const applyPresetToForm = () => {
+    const preset = PRESETS[presetIdx] || PRESETS[0];
+    const custom = isCustomPreset(preset);
+    const nameEl = document.getElementById("m-name");
+    const baseEl = document.getElementById("m-base");
+    const keyEl = document.getElementById("m-key");
+    const proxyEl = document.getElementById("m-proxy");
+    const fmtOpen = document.getElementById("m-format-openai");
+    const fmtPass = document.getElementById("m-format-pass");
+    const blurb = document.getElementById("m-preset-blurb");
+    if (nameEl) nameEl.value = custom ? "" : presetDisplayName(preset);
+    if (baseEl) {
+      baseEl.value = preset.baseUrl || "";
+      baseEl.readOnly = !custom;
+    }
+    if (keyEl) {
+      keyEl.value = preset.apiKey || "";
+      keyEl.placeholder = preset.local ? t("detail.keyPhLocal") : t("modal.keyOnlyPh");
+    }
+    if (proxyEl) proxyEl.value = preset.useProxy === false ? "0" : "1";
+    if (fmtOpen && fmtPass) {
+      const pass = preset.formatStandard === "passthrough";
+      fmtOpen.checked = !pass;
+      fmtPass.checked = pass;
+    }
+    if (blurb) {
+      blurb.textContent = preset.blurbKey ? t(preset.blurbKey) : t("modal.presetHint");
+    }
+    document.querySelectorAll(".preset-chip").forEach((btn) => {
+      btn.classList.toggle("active", Number(btn.dataset.preset) === presetIdx);
+    });
+    const adv = document.getElementById("m-advanced");
+    if (adv && custom) adv.open = true;
+  };
+
   root.innerHTML = `
     <div class="modal-backdrop" id="modal-backdrop">
-      <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal modal-lg" role="dialog" aria-modal="true">
         <div class="modal-head">
           <h3>${t("modal.addProvider")}</h3>
           <button class="btn btn-sm btn-ghost" id="modal-close">${t("common.close")}</button>
         </div>
         <div class="modal-body">
           <div class="field">
-            <label>${t("modal.preset")}</label>
-            <select class="select" id="m-preset">
-              ${PRESETS.map((x, i) => `<option value="${i}">${escapeHtml(presetDisplayName(x))}</option>`).join("")}
-            </select>
+            <label>${t("modal.presetPick")}</label>
+            <p class="hint" id="m-preset-blurb">${t("modal.presetHint")}</p>
+            <div class="preset-library">${renderPresetGrid()}</div>
           </div>
           <div class="field">
-            <label>${t("detail.name")} <span class="req">*</span></label>
-            <input class="input" id="m-name" value="${escapeAttr(presetDisplayName(PRESETS[0]))}" />
+            <label>${t("modal.keyOnly")} <span class="req" id="m-key-req">*</span></label>
+            <input class="input mono" id="m-key" type="password" placeholder="${escapeAttr(t("modal.keyOnlyPh"))}" autocomplete="off" />
           </div>
-          <div class="field">
-            <label>${t("detail.base")} <span class="req">*</span></label>
-            <input class="input mono" id="m-base" value="${escapeAttr(PRESETS[0].baseUrl)}" />
-          </div>
-          <div class="field">
-            <label>${t("detail.key")}</label>
-            <input class="input mono" id="m-key" type="password" placeholder="${escapeAttr(t("detail.keyPhLocal"))}" value="${escapeAttr(PRESETS[0].apiKey || "")}" />
-          </div>
-          <div class="field">
-            <label>${t("modal.access")}</label>
-            <select class="select" id="m-proxy">
-              <option value="0" ${PRESETS[0].useProxy === false ? "selected" : ""}>${t("detail.directNoProxy")}</option>
-              <option value="1" ${PRESETS[0].useProxy !== false ? "selected" : ""}>${t("detail.viaLocalProxy")}</option>
-            </select>
-          </div>
+          <details class="advanced-block" id="m-advanced">
+            <summary>${t("modal.advanced")}</summary>
+            <div class="field" style="margin-top:10px">
+              <label>${t("detail.name")} <span class="req">*</span></label>
+              <input class="input" id="m-name" />
+            </div>
+            <div class="field">
+              <label>${t("detail.base")} <span class="req">*</span></label>
+              <input class="input mono" id="m-base" />
+            </div>
+            <div class="field">
+              <label>${t("modal.access")}</label>
+              <select class="select" id="m-proxy">
+                <option value="0">${t("detail.directNoProxy")}</option>
+                <option value="1" selected>${t("detail.viaLocalProxy")}</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>${t("detail.formatStandard")}</label>
+              <div class="actions" style="margin-top:4px">
+                <label class="stat-pill" style="cursor:pointer;gap:8px">
+                  <input type="radio" name="m-format" id="m-format-openai" value="openai" checked />
+                  ${t("detail.formatOpenAI")}
+                </label>
+                <label class="stat-pill" style="cursor:pointer;gap:8px">
+                  <input type="radio" name="m-format" id="m-format-pass" value="passthrough" />
+                  ${t("detail.formatPassthrough")}
+                </label>
+              </div>
+            </div>
+          </details>
         </div>
         <div class="modal-foot">
           <button class="btn" id="modal-cancel">${t("common.cancel")}</button>
@@ -2295,15 +2771,13 @@ function openAddModal() {
     root.innerHTML = "";
   };
 
-  document.getElementById("m-preset")?.addEventListener("change", (e) => {
-    const preset = PRESETS[Number(e.target.value)];
-    if (!preset) return;
-    document.getElementById("m-name").value = isCustomPreset(preset) ? "" : presetDisplayName(preset);
-    document.getElementById("m-base").value = preset.baseUrl === "https://" ? "" : preset.baseUrl;
-    const keyEl = document.getElementById("m-key");
-    if (keyEl) keyEl.value = preset.apiKey || "";
-    const proxyEl = document.getElementById("m-proxy");
-    if (proxyEl) proxyEl.value = preset.useProxy === false ? "0" : "1";
+  applyPresetToForm();
+
+  document.querySelectorAll(".preset-chip").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      presetIdx = Number(btn.dataset.preset);
+      applyPresetToForm();
+    });
   });
 
   document.getElementById("modal-close")?.addEventListener("click", close);
@@ -2313,25 +2787,39 @@ function openAddModal() {
   });
 
   document.getElementById("modal-ok")?.addEventListener("click", async () => {
-    const name = document.getElementById("m-name").value.trim();
+    const preset = PRESETS[presetIdx] || PRESETS[0];
+    const name = document.getElementById("m-name").value.trim() || presetDisplayName(preset);
     const baseUrl = document.getElementById("m-base").value.trim().replace(/\/$/, "");
     let apiKey = document.getElementById("m-key").value.trim();
-    const presetIdx = Number(document.getElementById("m-preset").value);
-    const color = PRESETS[presetIdx]?.color || COLORS[providers.length % COLORS.length];
+    const color = preset.color || COLORS[providers.length % COLORS.length];
     const useProxy = document.getElementById("m-proxy")?.value === "1";
-    if (!apiKey && isLocalProviderHint(name, baseUrl)) apiKey = "ollama";
+    const formatStandard = document.getElementById("m-format-pass")?.checked ? "passthrough" : "openai";
+    const stableId = presetStableId(preset);
 
+    if (preset.local && !apiKey) apiKey = preset.apiKey || "ollama";
+    if (!preset.local && preset.keyRequired !== false && !apiKey) {
+      return toast(t("toast.needKeyCloud"), "err");
+    }
     if (!name) return toast(t("toast.needName"), "err");
     if (!baseUrl) return toast(t("toast.needBase"), "err");
 
+    // avoid duplicate stable ids for known presets
+    let id = isCustomPreset(preset) ? uid() : stableId;
+    if (!isCustomPreset(preset) && providers.some((x) => x.id === id)) {
+      return toast(t("toast.presetExists"), "err");
+    }
+    if (name.toLowerCase() === "ollama") id = "ollama";
+
     const item = {
-      id: name.toLowerCase() === "ollama" ? "ollama" : uid(),
+      id,
       name,
       baseUrl,
       apiKey,
       color,
       useProxy,
+      formatStandard,
       models: [],
+      tokenPackages: [],
     };
     providers.push(item);
     selectedId = item.id;
@@ -2361,8 +2849,11 @@ function openAddModal() {
   await loadPackageStatuses();
   booting = false;
   render();
-  if (page === "configs") {
+  if (page === "apps" || page === "configs") {
     loadToolConfigs(false);
+  }
+  if (page === "models") {
+    loadModelGroups().then(() => render());
   }
   if (page === "proxy") {
     // already refreshed

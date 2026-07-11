@@ -290,40 +290,49 @@ func deriveProviderID(baseURL, name string) string {
 	if i := strings.Index(host, "/"); i >= 0 {
 		host = host[:i]
 	}
+	var id string
 	switch {
 	case strings.Contains(host, "deepseek"):
-		return "deepseek"
+		id = "deepseek"
 	case strings.Contains(host, "openai"):
-		return "openai"
+		id = "openai-custom" // reserved built-in: cannot use "openai"
 	case strings.Contains(host, "anthropic"):
-		return "anthropic"
+		id = "anthropic-custom" // avoid reserved built-in if any
 	case strings.Contains(host, "moonshot"):
-		return "moonshot"
+		id = "moonshot"
 	case strings.Contains(host, "dashscope") || strings.Contains(host, "aliyun"):
-		return "qwen"
+		id = "qwen"
 	case strings.Contains(host, "bigmodel") || strings.Contains(host, "zhipu"):
-		return "zhipu"
+		id = "zhipu"
 	case strings.Contains(host, "minimax"):
-		return "minimax"
-	case strings.Contains(host, "localhost") || strings.Contains(host, "127.0.0.1"):
-		return "local"
+		id = "minimax"
+	case strings.Contains(host, "localhost") || strings.Contains(host, "127.0.0.1") || strings.Contains(host, "ollama"):
+		// local/ollama — never use reserved "ollama"
+		if strings.Contains(host, "ollama") || strings.Contains(host, "11434") {
+			id = "ollama-local"
+		} else {
+			id = "local"
+		}
 	}
-	// slug from name
-	slug := slugify(name)
-	if slug != "" && slug != "custom" {
-		return slug
+	if id == "" {
+		// slug from name
+		slug := slugify(name)
+		if slug != "" && slug != "custom" {
+			id = slug
+		}
 	}
-	// first label of host
-	if host != "" {
+	if id == "" && host != "" {
 		parts := strings.Split(host, ".")
 		if len(parts) > 0 && parts[0] != "api" && parts[0] != "www" {
-			return slugify(parts[0])
-		}
-		if len(parts) > 1 {
-			return slugify(parts[len(parts)-2])
+			id = slugify(parts[0])
+		} else if len(parts) > 1 {
+			id = slugify(parts[len(parts)-2])
 		}
 	}
-	return "custom"
+	if id == "" {
+		id = "custom"
+	}
+	return sanitizeCodexProviderID(id)
 }
 
 func slugify(s string) string {

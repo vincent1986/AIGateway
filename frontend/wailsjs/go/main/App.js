@@ -70,6 +70,14 @@ export function GetUsageStats() {
   return window['go']['main']['App']['GetUsageStats']();
 }
 
+export function InjectGateway(arg1) {
+  return window['go']['main']['App']['InjectGateway'](arg1);
+}
+
+export function ListModelGroups() {
+  return window['go']['main']['App']['ListModelGroups']();
+}
+
 export function ListProviders() {
   return window['go']['main']['App']['ListProviders']();
 }
@@ -80,6 +88,10 @@ export function PickToolConfig(arg1) {
 
 export function ReadConfigText(arg1) {
   return window['go']['main']['App']['ReadConfigText'](arg1);
+}
+
+export function ReorderModelGroupRoutes(arg1, arg2) {
+  return window['go']['main']['App']['ReorderModelGroupRoutes'](arg1, arg2);
 }
 
 export function RestoreCodexOriginalBases() {
@@ -94,12 +106,24 @@ export function RevealConfigPath(arg1) {
   return window['go']['main']['App']['RevealConfigPath'](arg1);
 }
 
+export function RollbackGateway(arg1) {
+  return window['go']['main']['App']['RollbackGateway'](arg1);
+}
+
 export function SaveProviders(arg1) {
   return window['go']['main']['App']['SaveProviders'](arg1);
 }
 
 export function SaveProxyConfig(arg1) {
   return window['go']['main']['App']['SaveProxyConfig'](arg1);
+}
+
+export function SetModelGroupRouteEnabled(arg1, arg2) {
+  return window['go']['main']['App']['SetModelGroupRouteEnabled'](arg1, arg2);
+}
+
+export function SetModelGroupRoutePriority(arg1, arg2) {
+  return window['go']['main']['App']['SetModelGroupRoutePriority'](arg1, arg2);
 }
 
 export function SetToolConfigPath(arg1, arg2) {
