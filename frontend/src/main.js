@@ -1,6 +1,6 @@
 import "./style.css";
 import "./app.css";
-import { t, getLocale, setLocale, revealLabelForOs, tb } from "./i18n.js";
+import { t, getLocale, setLocale, getLocaleMeta, LOCALES, revealLabelForOs, tb, localeBcp47, usesChineseUnits } from "./i18n.js";
 
 import {
   DiscoverToolConfigs,
@@ -245,15 +245,15 @@ function normalizeProvider(p) {
 
 function formatTokens(n) {
   n = Number(n) || 0;
-  if (getLocale() === "zh") {
+  if (usesChineseUnits()) {
     if (n >= 1e8) return (n / 1e8).toFixed(2) + " " + t("unit.yi");
     if (n >= 1e4) return (n / 1e4).toFixed(2) + " " + t("unit.wan");
-    return n.toLocaleString("zh-CN");
+    return n.toLocaleString(localeBcp47());
   }
   if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
   if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
   if (n >= 1e3) return (n / 1e3).toFixed(2) + "K";
-  return n.toLocaleString("en-US");
+  return n.toLocaleString(localeBcp47());
 }
 
 function providerPackageStatus(p) {
@@ -526,9 +526,20 @@ function render() {
         </nav>
       </div>
       <div class="topbar-meta">
-        <div class="lang-switch" title="${escapeAttr(t("lang.switch"))}">
-          <button type="button" class="lang-btn ${getLocale() === "zh" ? "active" : ""}" data-lang="zh">${t("lang.zh")}</button>
-          <button type="button" class="lang-btn ${getLocale() === "en" ? "active" : ""}" data-lang="en">${t("lang.en")}</button>
+        <div class="lang-picker" id="lang-picker">
+          <button type="button" class="lang-picker-btn" id="lang-picker-btn" title="${escapeAttr(t("lang.switch"))}" aria-haspopup="listbox" aria-expanded="false">
+            <span class="lang-picker-icon">🌐</span>
+            <span class="lang-picker-label">${escapeHtml(getLocaleMeta()?.native || "EN")}</span>
+            <span class="lang-picker-caret">▾</span>
+          </button>
+          <div class="lang-popup" id="lang-popup" role="listbox" hidden>
+            ${LOCALES.map(
+              (l) => `
+              <button type="button" class="lang-option ${getLocale() === l.id ? "active" : ""}" role="option" data-lang="${escapeAttr(l.id)}" aria-selected="${getLocale() === l.id}">
+                <span class="lang-option-native">${escapeHtml(l.native)}</span>
+              </button>`
+            ).join("")}
+          </div>
         </div>
         <span class="stat-pill">${escapeHtml(systemInfo.platformName || "")}</span>
         <span class="stat-pill">${t("stat.providers")} <strong>${providers.length}</strong></span>
@@ -1426,7 +1437,7 @@ function formatBackupAt(iso) {
   try {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return iso;
-    return d.toLocaleString(getLocale() === "zh" ? "zh-CN" : "en-US");
+    return d.toLocaleString(localeBcp47());
   } catch {
     return iso;
   }
@@ -1523,9 +1534,49 @@ function bindShellEvents() {
       }
     });
   });
-  document.querySelectorAll(".lang-btn").forEach((el) => {
-    el.addEventListener("click", () => {
+  const picker = document.getElementById("lang-picker");
+  const btn = document.getElementById("lang-picker-btn");
+  const popup = document.getElementById("lang-popup");
+  let outsideBound = false;
+  const onDoc = (e) => {
+    if (!picker?.contains(e.target)) closePopup();
+  };
+  const onKey = (e) => {
+    if (e.key === "Escape") closePopup();
+  };
+  const closePopup = () => {
+    if (!popup || !btn) return;
+    popup.hidden = true;
+    btn.setAttribute("aria-expanded", "false");
+    if (outsideBound) {
+      document.removeEventListener("click", onDoc);
+      document.removeEventListener("keydown", onKey);
+      outsideBound = false;
+    }
+  };
+  const openPopup = () => {
+    if (!popup || !btn) return;
+    popup.hidden = false;
+    btn.setAttribute("aria-expanded", "true");
+    if (!outsideBound) {
+      // defer so the opening click doesn't immediately close
+      setTimeout(() => {
+        document.addEventListener("click", onDoc);
+        document.addEventListener("keydown", onKey);
+        outsideBound = true;
+      }, 0);
+    }
+  };
+  btn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (popup?.hidden) openPopup();
+    else closePopup();
+  });
+  popup?.querySelectorAll(".lang-option").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
       const next = el.dataset.lang;
+      closePopup();
       if (!next || next === getLocale()) return;
       setLocale(next);
       render();
