@@ -17,6 +17,7 @@ import {
   ClearDefaultBackup,
   ListProviders,
   SaveProviders,
+  DeleteProvider,
   FetchProviderModels,
   TestProviderConnection,
   GetProxyStatus,
@@ -44,31 +45,35 @@ const COLORS = ["#3d8bfd", "#7c5cff", "#3fb950", "#d29922", "#f85149", "#39c5cf"
 
 /**
  * Built-in provider preset library (PRD 3.2).
- * User picks a card → only fills API Key for most cloud vendors.
+ * Grouped by country (not "domestic / international").
+ * country: local | CN | US | multi | custom
  * @type {Array<{
  *   id: string, name: string, nameKey?: string|null, baseUrl: string, color: string,
  *   useProxy: boolean, formatStandard?: string, apiKey?: string, keyRequired?: boolean,
- *   local?: boolean, region?: string, blurbKey?: string
+ *   local?: boolean, country?: string, blurbKey?: string
  * }>}
  */
 const PRESETS = [
-  { id: "ollama", name: "Ollama", baseUrl: "http://127.0.0.1:11434/v1", color: "#c4c4c4", useProxy: false, formatStandard: "openai", apiKey: "ollama", keyRequired: false, local: true, region: "local", blurbKey: "preset.blurb.local" },
-  { id: "deepseek", name: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", color: "#3fb950", useProxy: true, formatStandard: "openai", keyRequired: true, region: "cn", blurbKey: "preset.blurb.deepseek" },
-  { id: "siliconflow", nameKey: "preset.siliconflow", name: "硅基流动", baseUrl: "https://api.siliconflow.cn/v1", color: "#7c5cff", useProxy: true, formatStandard: "openai", keyRequired: true, region: "cn", blurbKey: "preset.blurb.silicon" },
-  { id: "openai", name: "OpenAI", baseUrl: "https://api.openai.com/v1", color: "#3d8bfd", useProxy: true, formatStandard: "openai", keyRequired: true, region: "global" },
-  { id: "anthropic", name: "Anthropic", baseUrl: "https://api.anthropic.com/v1", color: "#d29922", useProxy: true, formatStandard: "openai", keyRequired: true, region: "global" },
-  { id: "qwen", nameKey: "preset.qwen", name: "通义千问", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", color: "#7c5cff", useProxy: true, formatStandard: "openai", keyRequired: true, region: "cn" },
-  { id: "moonshot", name: "Moonshot", baseUrl: "https://api.moonshot.cn/v1", color: "#39c5cf", useProxy: true, formatStandard: "openai", keyRequired: true, region: "cn" },
-  { id: "zhipu", nameKey: "preset.zhipu", name: "智谱", baseUrl: "https://open.bigmodel.cn/api/paas/v4", color: "#3859ff", useProxy: true, formatStandard: "openai", keyRequired: true, region: "cn" },
-  { id: "minimax", name: "MiniMax", baseUrl: "https://api.minimax.chat/v1", color: "#e85d9a", useProxy: true, formatStandard: "openai", keyRequired: true, region: "cn" },
-  { id: "doubao", nameKey: "preset.doubao", name: "豆包/火山", baseUrl: "https://ark.cn-beijing.volces.com/api/v3", color: "#3d8bfd", useProxy: true, formatStandard: "openai", keyRequired: true, region: "cn" },
-  { id: "yi", nameKey: "preset.yi", name: "零一万物", baseUrl: "https://api.lingyiwanwu.com/v1", color: "#a371f7", useProxy: true, formatStandard: "openai", keyRequired: true, region: "cn" },
-  { id: "groq", name: "Groq", baseUrl: "https://api.groq.com/openai/v1", color: "#f85149", useProxy: true, formatStandard: "openai", keyRequired: true, region: "global" },
-  { id: "openrouter", name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", color: "#7c5cff", useProxy: true, formatStandard: "openai", keyRequired: true, region: "global" },
-  { id: "xai", name: "xAI Grok", baseUrl: "https://api.x.ai/v1", color: "#e6edf3", useProxy: true, formatStandard: "openai", keyRequired: true, region: "global" },
-  { id: "together", name: "Together", baseUrl: "https://api.together.xyz/v1", color: "#3fb950", useProxy: true, formatStandard: "openai", keyRequired: true, region: "global" },
-  { id: "fireworks", name: "Fireworks", baseUrl: "https://api.fireworks.ai/inference/v1", color: "#d29922", useProxy: true, formatStandard: "openai", keyRequired: true, region: "global" },
-  { id: "custom", nameKey: "preset.custom", name: "自定义", baseUrl: "", color: "#8b9cb3", useProxy: true, formatStandard: "openai", keyRequired: true, region: "custom", blurbKey: "preset.blurb.custom" },
+  { id: "ollama", name: "Ollama", baseUrl: "http://127.0.0.1:11434/v1", color: "#c4c4c4", useProxy: false, formatStandard: "openai", apiKey: "ollama", keyRequired: false, local: true, country: "local", blurbKey: "preset.blurb.local" },
+  // China
+  { id: "deepseek", name: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", color: "#3fb950", useProxy: true, formatStandard: "openai", keyRequired: true, country: "CN", blurbKey: "preset.blurb.deepseek" },
+  { id: "siliconflow", nameKey: "preset.siliconflow", name: "硅基流动", baseUrl: "https://api.siliconflow.cn/v1", color: "#7c5cff", useProxy: true, formatStandard: "openai", keyRequired: true, country: "CN", blurbKey: "preset.blurb.silicon" },
+  { id: "qwen", nameKey: "preset.qwen", name: "通义千问", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", color: "#7c5cff", useProxy: true, formatStandard: "openai", keyRequired: true, country: "CN" },
+  { id: "moonshot", name: "Moonshot", baseUrl: "https://api.moonshot.cn/v1", color: "#39c5cf", useProxy: true, formatStandard: "openai", keyRequired: true, country: "CN" },
+  { id: "zhipu", nameKey: "preset.zhipu", name: "智谱", baseUrl: "https://open.bigmodel.cn/api/paas/v4", color: "#3859ff", useProxy: true, formatStandard: "openai", keyRequired: true, country: "CN" },
+  { id: "minimax", name: "MiniMax", baseUrl: "https://api.minimax.chat/v1", color: "#e85d9a", useProxy: true, formatStandard: "openai", keyRequired: true, country: "CN" },
+  { id: "doubao", nameKey: "preset.doubao", name: "豆包/火山", baseUrl: "https://ark.cn-beijing.volces.com/api/v3", color: "#3d8bfd", useProxy: true, formatStandard: "openai", keyRequired: true, country: "CN" },
+  { id: "yi", nameKey: "preset.yi", name: "零一万物", baseUrl: "https://api.lingyiwanwu.com/v1", color: "#a371f7", useProxy: true, formatStandard: "openai", keyRequired: true, country: "CN" },
+  // United States
+  { id: "openai", name: "OpenAI", baseUrl: "https://api.openai.com/v1", color: "#3d8bfd", useProxy: true, formatStandard: "openai", keyRequired: true, country: "US" },
+  { id: "anthropic", name: "Anthropic", baseUrl: "https://api.anthropic.com/v1", color: "#d29922", useProxy: true, formatStandard: "openai", keyRequired: true, country: "US" },
+  { id: "groq", name: "Groq", baseUrl: "https://api.groq.com/openai/v1", color: "#f85149", useProxy: true, formatStandard: "openai", keyRequired: true, country: "US" },
+  { id: "xai", name: "xAI Grok", baseUrl: "https://api.x.ai/v1", color: "#e6edf3", useProxy: true, formatStandard: "openai", keyRequired: true, country: "US" },
+  { id: "together", name: "Together", baseUrl: "https://api.together.xyz/v1", color: "#3fb950", useProxy: true, formatStandard: "openai", keyRequired: true, country: "US" },
+  { id: "fireworks", name: "Fireworks", baseUrl: "https://api.fireworks.ai/inference/v1", color: "#d29922", useProxy: true, formatStandard: "openai", keyRequired: true, country: "US" },
+  // Multi-region aggregator
+  { id: "openrouter", name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", color: "#7c5cff", useProxy: true, formatStandard: "openai", keyRequired: true, country: "multi" },
+  { id: "custom", nameKey: "preset.custom", name: "自定义", baseUrl: "", color: "#8b9cb3", useProxy: true, formatStandard: "openai", keyRequired: true, country: "custom", blurbKey: "preset.blurb.custom" },
 ];
 
 function presetDisplayName(p) {
@@ -225,21 +230,21 @@ function normalizeProvider(p) {
   let formatStandard = p.formatStandard || p.FormatStandard || "openai";
   if (formatStandard !== "passthrough") formatStandard = "openai";
   return {
-    id: p.id || uid(),
-    name,
+    id: p.id || p.ID || uid(),
+    name: name || p.Name || "",
     baseUrl,
     apiKey: p.apiKey || p.APIKey || "",
-    color: p.color || COLORS[0],
+    color: p.color || p.Color || COLORS[0],
     useProxy,
     formatStandard,
     tokenPackages: pkgs,
-    models: (p.models || []).map((m) => ({
-      id: m.id,
-      name: m.name || m.id,
-      enabled: m.enabled !== false,
-      isDefault: !!m.isDefault,
-      ownedBy: m.ownedBy || m.owned_by || "",
-    })),
+    models: (p.models || p.Models || []).map((m) => ({
+      id: m.id || m.ID || "",
+      name: m.name || m.Name || m.id || m.ID || "",
+      enabled: m.enabled !== false && m.Enabled !== false,
+      isDefault: !!(m.isDefault ?? m.IsDefault),
+      ownedBy: m.ownedBy || m.OwnedBy || m.owned_by || "",
+    })).filter((m) => m.id),
   };
 }
 
@@ -779,8 +784,18 @@ function renderConfigsPage() {
 function statusTagForTool(st) {
   if (st.found && st.exists) {
     const mp = (st.modelProvider || "").toLowerCase();
-    const pathOk = !!(st.path);
-    if (mp.includes("aigateway") || mp.includes("codex_proxy")) {
+    const model = (st.model || "").toLowerCase();
+    const preview = (configPreview[st.kind] || "").toLowerCase();
+    const msg = (st.message || "").toLowerCase();
+    const managed =
+      mp.includes("aigateway") ||
+      mp.includes("codex_proxy") ||
+      model.startsWith("aigateway/") ||
+      preview.includes("aigateway") ||
+      preview.includes("127.0.0.1:18080") ||
+      msg.includes("已接管") ||
+      msg.includes("takeover");
+    if (managed) {
       return `<span class="tag ok">${t("apps.takenOver")}</span>`;
     }
     return `<span class="tag ok">${t("configs.located")}</span>`;
@@ -792,6 +807,36 @@ function renderAppCard(st) {
   const kind = st.kind;
   const busy = configsBusy === kind;
   const ok = !!st.found && !!st.exists;
+  const modelLine = st.model
+    ? `<div class="hint" style="margin-top:6px">${t("common.current")}: <code>${escapeHtml(st.model)}</code>${
+        st.modelProvider ? ` · ${escapeHtml(st.modelProvider)}` : ""
+      }</div>`
+    : "";
+  // Model apply for all tools that support ApplyToolModel (codex/claude/openclaw/harness)
+  const choices = modelChoicesFor(kind);
+  const selectedModel = pendingModel[kind] || st.model || "";
+  const modelApply =
+    choices.length > 0
+      ? `<div class="field" style="margin-top:10px">
+          <label style="font-size:12px;color:var(--text-secondary)">${t("configs.switchModel") || "切换模型"}</label>
+          <div class="actions" style="margin-top:4px;flex-wrap:wrap">
+            <select class="select" data-act="model-select" data-kind="${kind}" style="min-width:160px;flex:1">
+              <option value="">${t("common.none")}</option>
+              ${choices
+                .map(
+                  (c) =>
+                    `<option value="${escapeAttr(c.id)}" data-provider="${escapeAttr(c.provider || "")}" ${
+                      c.id === selectedModel || (selectedModel && selectedModel.endsWith("/" + c.id)) ? "selected" : ""
+                    }>${escapeHtml(c.group ? c.group + " / " : "")}${escapeHtml(c.name || c.id)}</option>`
+                )
+                .join("")}
+            </select>
+            <button class="btn btn-sm btn-primary" data-act="apply-model" data-kind="${kind}" ${
+              busy || !selectedModel ? "disabled" : ""
+            }>${t("common.apply")}</button>
+          </div>
+        </div>`
+      : "";
   return `
     <section class="config-card app-card" data-kind="${escapeAttr(kind)}">
       <div class="config-card-head">
@@ -806,6 +851,7 @@ function renderAppCard(st) {
           <label style="font-size:12px;color:var(--text-secondary);font-weight:500">${t("configs.pathLabel")}</label>
           <div class="path-value ${ok ? "" : "missing"}">${escapeHtml(st.path || t("common.dash"))}</div>
         </div>
+        ${modelLine}
         <div class="hint">${t("apps.takeoverHint")}</div>
         <div class="actions" style="margin-top:10px;flex-wrap:wrap">
           <button class="btn btn-primary" data-act="takeover" data-kind="${kind}" ${busy ? "disabled" : ""}>
@@ -818,6 +864,7 @@ function renderAppCard(st) {
           <button class="btn btn-sm" data-act="pick" data-kind="${kind}" ${busy ? "disabled" : ""}>${t("configs.pick")}</button>
           <button class="btn btn-sm" data-act="reveal" data-kind="${kind}" ${!st.path ? "disabled" : ""}>${escapeHtml(revealLabelForOs(systemInfo.os))}</button>
         </div>
+        ${modelApply}
         <div class="config-msg ${ok ? "ok" : st.message ? "warn" : ""}">${escapeHtml(tb(st.message || ""))}</div>
         ${
           configPreview[kind]
@@ -2110,12 +2157,15 @@ function bindConfigEvents() {
   document.querySelectorAll("[data-act='apply-model']").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const kind = btn.dataset.kind;
+      const sel = document.querySelector(`[data-act='model-select'][data-kind='${kind}']`);
       const model =
         document.querySelector(`[data-act='model-input'][data-kind='${kind}']`)?.value?.trim() ||
+        sel?.value?.trim() ||
         pendingModel[kind] ||
         "";
       const provider =
         document.querySelector(`[data-act='provider-input'][data-kind='${kind}']`)?.value?.trim() ||
+        sel?.selectedOptions?.[0]?.dataset?.provider ||
         pendingProvider[kind] ||
         "";
       if (!model) return toast(t("toast.selectModel"), "err");
@@ -2423,14 +2473,29 @@ function bindProviderEvents() {
 
   document.getElementById("btn-delete-provider")?.addEventListener("click", async () => {
     if (!confirm(t("confirm.deleteProvider", { name: p.name }))) return;
-    providers = providers.filter((x) => x.id !== p.id);
-    selectedId = providers[0]?.id ?? null;
+    const delId = p.id;
+    if (!delId) return toast(t("toast.deleteProviderFail") || "厂家 ID 无效", "err");
     try {
-      await persistProviders();
+      if (hasBackend() && typeof DeleteProvider === "function") {
+        const list = await DeleteProvider(delId);
+        providers = (list || []).map(normalizeProvider);
+      } else {
+        providers = providers.filter((x) => x.id !== delId);
+        await persistProviders();
+      }
+      selectedId = providers[0]?.id ?? null;
+      showKey = false;
+      modelQuery = "";
+      testResult = null;
+      await loadPackageStatuses();
       toast(t("toast.deletedProvider"));
       render();
     } catch (e) {
       toast(errMsg(e), "err");
+      try {
+        await loadProviders();
+        render();
+      } catch (_) {}
     }
   });
 
@@ -2646,19 +2711,21 @@ function openAddModal() {
   if (!PRESETS[presetIdx]) presetIdx = 0;
 
   const renderPresetGrid = () => {
-    const regions = [
-      { id: "local", label: t("modal.region.local") },
-      { id: "cn", label: t("modal.region.cn") },
-      { id: "global", label: t("modal.region.global") },
-      { id: "custom", label: t("modal.region.custom") },
+    // Group by country (not domestic/international)
+    const countries = [
+      { id: "local", label: t("modal.country.local") },
+      { id: "CN", label: t("modal.country.CN") },
+      { id: "US", label: t("modal.country.US") },
+      { id: "multi", label: t("modal.country.multi") },
+      { id: "custom", label: t("modal.country.custom") },
     ];
-    return regions
-      .map((reg) => {
-        const items = PRESETS.map((p, i) => ({ p, i })).filter(({ p }) => (p.region || "global") === reg.id);
+    return countries
+      .map((co) => {
+        const items = PRESETS.map((p, i) => ({ p, i })).filter(({ p }) => (p.country || "US") === co.id);
         if (!items.length) return "";
         return `
           <div class="preset-region">
-            <div class="preset-region-label">${escapeHtml(reg.label)}</div>
+            <div class="preset-region-label">${escapeHtml(co.label)}</div>
             <div class="preset-grid">
               ${items
                 .map(

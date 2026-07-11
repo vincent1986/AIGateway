@@ -345,5 +345,10 @@
   "lang.ko": "한국어",
   "lang.de": "Deutsch",
   "lang.vi": "Tiếng Việt",
-  "lang.th": "ไทย"
+  "lang.th": "ไทย",
+  "modal.country.local": "本机",
+  "modal.country.CN": "中国",
+  "modal.country.US": "美国",
+  "modal.country.multi": "多国聚合",
+  "modal.country.custom": "自定义"
 }

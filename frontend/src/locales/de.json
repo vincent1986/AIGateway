@@ -204,7 +204,7 @@
   "configs.currentModel": "Current model",
   "configs.unset": "(not set)",
   "configs.claudeCompat": "model + env (tutorial-compatible)",
-  "configs.switchModel": "Switch model",
+  "configs.switchModel": "Modell wechseln",
   "configs.selectModel": "Select model…",
   "configs.customModelHint": "Or type a custom model ID",
   "configs.deepseekOneClick": "One-click DeepSeek → Claude Code",
@@ -345,5 +345,10 @@
   "lang.ko": "한국어",
   "lang.de": "Deutsch",
   "lang.vi": "Tiếng Việt",
-  "lang.th": "ไทย"
+  "lang.th": "ไทย",
+  "modal.country.local": "Lokal",
+  "modal.country.CN": "China",
+  "modal.country.US": "USA",
+  "modal.country.multi": "Multi-Region",
+  "modal.country.custom": "Benutzerdefiniert"
 }

@@ -67,8 +67,11 @@ func (a *App) InjectGateway(kind string) (ToolConfigStatus, error) {
 	}
 
 	var err error
-	if d != nil {
-		err = d.InjectGateway(path, base, "")
+	// OpenClaw needs provider catalog from local enabled models
+	if k == ToolOpenClaw {
+		err = injectOpenClawGateway(path, base, "aigateway", collectEnabledModelIDs())
+	} else if d != nil {
+		err = d.InjectGateway(path, base, "aigateway")
 	} else {
 		// legacy codex/claude only
 		var next string
@@ -140,6 +143,10 @@ func injectGatewayCodex(content, gatewayBase string) (string, error) {
 	return content, nil
 }
 
+// injectGatewayClaude rewrites Claude Code ~/.claude/settings.json per official docs:
+// route traffic via ANTHROPIC_BASE_URL (+ AUTH_TOKEN/API_KEY). Model is chosen separately
+// with the "model" field / ANTHROPIC_MODEL (ApplyToolModel).
+// Do NOT set OPENAI_BASE_URL or top-level apiBaseUrl — Claude Code ignores those.
 func injectGatewayClaude(content, gatewayBase string) (string, error) {
 	var root map[string]any
 	if strings.TrimSpace(content) == "" {
@@ -151,10 +158,21 @@ func injectGatewayClaude(content, gatewayBase string) (string, error) {
 	if env == nil {
 		env = map[string]any{}
 	}
-	env["OPENAI_BASE_URL"] = gatewayBase
 	env["ANTHROPIC_BASE_URL"] = gatewayBase
+	// Local gateway accepts any non-empty key; keep existing tokens if present.
+	if s, _ := env["ANTHROPIC_AUTH_TOKEN"].(string); strings.TrimSpace(s) == "" {
+		env["ANTHROPIC_AUTH_TOKEN"] = "aigateway"
+	}
+	if s, _ := env["ANTHROPIC_API_KEY"].(string); strings.TrimSpace(s) == "" {
+		env["ANTHROPIC_API_KEY"] = "aigateway"
+	}
+	// Clean legacy incorrect keys from earlier AIGateway versions
+	delete(env, "OPENAI_BASE_URL")
+	delete(env, "OPENAI_API_KEY")
 	root["env"] = env
-	root["apiBaseUrl"] = gatewayBase
+	delete(root, "apiBaseUrl")
+	delete(root, "baseUrl")
+	delete(root, "base_url")
 	b, err := json.MarshalIndent(root, "", "  ")
 	if err != nil {
 		return "", err

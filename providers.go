@@ -114,30 +114,16 @@ func defaultOllamaProvider() Provider {
 	}
 }
 
-// ensureBuiltInProviders seeds Ollama when store is empty, or adds it if missing by id.
+// ensureBuiltInProviders seeds default Ollama only on first empty store.
+// It must NOT re-add Ollama after the user intentionally deletes it.
 func ensureBuiltInProviders(list []Provider) ([]Provider, bool) {
 	if list == nil {
 		list = []Provider{}
 	}
-	changed := false
 	if len(list) == 0 {
-		list = append(list, defaultOllamaProvider())
-		return list, true
+		return []Provider{defaultOllamaProvider()}, true
 	}
-	hasOllama := false
-	for _, p := range list {
-		n := strings.ToLower(p.Name + " " + p.ID + " " + p.BaseURL)
-		if p.ID == "ollama" || strings.Contains(n, "ollama") || strings.Contains(n, "11434") {
-			hasOllama = true
-			break
-		}
-	}
-	if !hasOllama {
-		// Prepend built-in Ollama so it appears first
-		list = append([]Provider{defaultOllamaProvider()}, list...)
-		changed = true
-	}
-	return list, changed
+	return list, false
 }
 
 // providerWantsProxy reports whether Codex should point this vendor at local proxy.
@@ -305,23 +291,35 @@ func (a *App) UpsertProvider(p Provider) ([]Provider, error) {
 	return list, nil
 }
 
-// DeleteProvider removes a provider by id.
+// DeleteProvider removes a provider by id (exact match, then case-insensitive).
 func (a *App) DeleteProvider(id string) ([]Provider, error) {
 	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, fmt.Errorf("厂家 ID 不能为空")
+	}
 	list, err := loadProvidersFromDisk()
 	if err != nil {
 		return nil, err
 	}
 	next := make([]Provider, 0, len(list))
+	removed := false
 	for _, p := range list {
-		if p.ID != id {
-			next = append(next, p)
+		if p.ID == id || strings.EqualFold(p.ID, id) {
+			removed = true
+			continue
 		}
+		next = append(next, p)
+	}
+	if !removed {
+		return list, fmt.Errorf("未找到厂家: %s", id)
 	}
 	if err := saveProvidersToDisk(next); err != nil {
 		return nil, err
 	}
 	_, _ = a.EnsureProxyRouting()
+	if next == nil {
+		next = []Provider{}
+	}
 	return next, nil
 }
 

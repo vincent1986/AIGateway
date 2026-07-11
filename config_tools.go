@@ -220,6 +220,10 @@ func (a *App) fillFromFile(st *ToolConfigStatus) {
 		st.Candidates = parseCodexModels(content)
 	case ToolClaude:
 		st.Model, st.ModelProvider = readClaudeModel(content, st.Path)
+	case ToolOpenClaw:
+		st.Model, st.ModelProvider = readOpenClawModel(content)
+	case ToolHarness:
+		st.Model, st.ModelProvider = readHarnessModel(content)
 	}
 }
 

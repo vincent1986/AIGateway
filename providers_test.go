@@ -96,13 +96,50 @@ func TestProvidersPersist(t *testing.T) {
 	if demo == nil || demo.Name != "Demo" || !providerWantsProxy(*demo) {
 		t.Fatalf("demo missing or proxy flag wrong: %+v", demo)
 	}
+	// Delete Ollama while another provider remains — must NOT re-seed
+	loaded, err = a.DeleteProvider("ollama")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range loaded {
+		if p.ID == "ollama" {
+			t.Fatal("ollama should be deleted")
+		}
+	}
+	again, err := a.ListProviders()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range again {
+		if p.ID == "ollama" {
+			t.Fatal("ollama must not re-seed when other providers remain")
+		}
+	}
+	// p1 still there
+	foundP1 := false
+	for _, p := range again {
+		if p.ID == "p1" {
+			foundP1 = true
+		}
+	}
+	if !foundP1 {
+		t.Fatal("expected p1 to remain after deleting ollama")
+	}
+
+	// Delete last provider → empty store → ListProviders re-seeds Ollama (first-run UX)
 	loaded, err = a.DeleteProvider("p1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Ollama remains
-	if len(loaded) < 1 {
-		t.Fatalf("expected ollama remain, got %d", len(loaded))
+	if len(loaded) != 0 {
+		t.Fatalf("expected empty after deleting last, got %d", len(loaded))
+	}
+	seeded2, err := a.ListProviders()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(seeded2) != 1 || seeded2[0].ID != "ollama" {
+		t.Fatalf("empty store should seed ollama, got %+v", seeded2)
 	}
 }
 

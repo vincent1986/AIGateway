@@ -10,10 +10,10 @@ import (
 	"unicode"
 )
 
-// ModelApplyRequest is the full payload for switching models on Codex / Claude Code.
-// Frontend can pass provider context so both tools get base URL + key, not only model id.
+// ModelApplyRequest is the full payload for switching models on downstream tools.
+// Frontend can pass provider context so tools get base URL + key, not only model id.
 type ModelApplyRequest struct {
-	Kind     string `json:"kind"`     // codex | claude
+	Kind     string `json:"kind"`     // codex | claude | openclaw | harness
 	Path     string `json:"path"`     // config file path (optional if auto-discovered)
 	Model    string `json:"model"`    // model id
 	Provider string `json:"provider"` // codex model_provider id, e.g. deepseek
@@ -29,7 +29,9 @@ func (a *App) ApplyToolModel(req ModelApplyRequest) (ToolConfigStatus, error) {
 	if model == "" {
 		return ToolConfigStatus{}, fmt.Errorf("模型不能为空")
 	}
-	if k != ToolCodex && k != ToolClaude {
+	switch k {
+	case ToolCodex, ToolClaude, ToolOpenClaw, ToolHarness:
+	default:
 		return ToolConfigStatus{}, fmt.Errorf("未知工具类型: %s", req.Kind)
 	}
 
@@ -162,7 +164,23 @@ func (a *App) ApplyToolModel(req ModelApplyRequest) (ToolConfigStatus, error) {
 			}
 			model = main // reflect normalized id in status message
 		} else {
-			next, err = applyClaudeModelSwitch(content, model, baseURL, apiKey, providerID)
+			// Prefer local gateway when vendor wants proxy
+			writeBase := baseURL
+			if providerIDWantsProxy(providerID, displayName, baseURL) {
+				if a.proxy == nil {
+					a.proxy = newProxyServer()
+				}
+				if !a.proxy.status().Running {
+					_ = a.proxy.start()
+				}
+				if a.proxy.status().Running {
+					writeBase = a.proxy.baseURL()
+					if apiKey == "" {
+						apiKey = "aigateway"
+					}
+				}
+			}
+			next, err = applyClaudeModelSwitch(content, model, writeBase, apiKey, providerID)
 			if err != nil {
 				return ToolConfigStatus{}, err
 			}
@@ -170,10 +188,56 @@ func (a *App) ApplyToolModel(req ModelApplyRequest) (ToolConfigStatus, error) {
 			if apiKey != "" {
 				_ = setSystemEnvVar("ANTHROPIC_API_KEY", apiKey)
 				_ = setSystemEnvVar("ANTHROPIC_AUTH_TOKEN", apiKey)
-				if baseURL != "" {
-					_ = setSystemEnvVar("ANTHROPIC_BASE_URL", baseURL)
+				if writeBase != "" {
+					_ = setSystemEnvVar("ANTHROPIC_BASE_URL", writeBase)
 				}
 			}
+		}
+	case ToolOpenClaw:
+		// Official: models.providers.aigateway + agents.defaults.model.primary
+		writeBase := baseURL
+		if writeBase == "" || providerIDWantsProxy(providerID, displayName, baseURL) {
+			if a.proxy == nil {
+				a.proxy = newProxyServer()
+			}
+			if !a.proxy.status().Running {
+				_ = a.proxy.start()
+			}
+			if a.proxy.status().Running {
+				writeBase = a.proxy.baseURL()
+			}
+		}
+		if writeBase == "" {
+			writeBase = "http://127.0.0.1:18080/v1"
+		}
+		if apiKey == "" {
+			apiKey = "aigateway"
+		}
+		next, err = applyOpenClawModelSwitch(content, model, writeBase, apiKey)
+		if err != nil {
+			return ToolConfigStatus{}, err
+		}
+		autoBakMsg += "；OpenClaw primary → aigateway/" + model
+	case ToolHarness:
+		writeBase := baseURL
+		if writeBase == "" || providerIDWantsProxy(providerID, displayName, baseURL) {
+			if a.proxy == nil {
+				a.proxy = newProxyServer()
+			}
+			if !a.proxy.status().Running {
+				_ = a.proxy.start()
+			}
+			if a.proxy.status().Running {
+				writeBase = a.proxy.baseURL()
+			}
+		}
+		if apiKey == "" {
+			apiKey = "aigateway"
+		}
+		isJSON := strings.HasSuffix(strings.ToLower(path), ".json")
+		next, err = applyHarnessModelSwitch(content, model, writeBase, apiKey, isJSON)
+		if err != nil {
+			return ToolConfigStatus{}, err
 		}
 	}
 
