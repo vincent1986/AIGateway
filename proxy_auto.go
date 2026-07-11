@@ -85,6 +85,8 @@ func (a *App) syncCodexProviderBases(list []Provider) (string, error) {
 	content = removeTomlProviderBlock(content, "codex_proxy")
 	// wire_api is deprecated by Codex — remove from all provider blocks
 	content = stripAllWireAPI(content)
+	// rename reserved built-in provider table keys if still present
+	content = sanitizeReservedCodexProviderTables(content)
 	nProxy, nDirect := 0, 0
 
 	for _, p := range list {
@@ -128,23 +130,65 @@ func stripAllWireAPI(content string) string {
 	return re.ReplaceAllString(content, "")
 }
 
+// sanitizeReservedCodexProviderTables renames any reserved [model_providers.x]
+// blocks still present in a config.toml string (migration / self-heal).
+func sanitizeReservedCodexProviderTables(content string) string {
+	for reserved, alt := range codexReservedProviderIDs {
+		old := "[model_providers." + reserved + "]"
+		neu := "[model_providers." + alt + "]"
+		if strings.Contains(content, old) {
+			content = strings.ReplaceAll(content, old, neu)
+		}
+		// also top-level model_provider = "reserved"
+		content = strings.ReplaceAll(content, `model_provider = "`+reserved+`"`, `model_provider = "`+alt+`"`)
+		content = strings.ReplaceAll(content, `provider = "`+reserved+`"`, `provider = "`+alt+`"`)
+	}
+	return content
+}
+
+// codexReservedProviderIDs cannot be used as [model_providers.<id>] keys —
+// Codex treats them as built-ins and rejects overrides.
+var codexReservedProviderIDs = map[string]string{
+	"openai":    "openai-custom",
+	"ollama":    "ollama-local",
+	"anthropic": "anthropic-custom",
+}
+
+// sanitizeCodexProviderID renames reserved built-in provider table keys.
+func sanitizeCodexProviderID(id string) string {
+	id = strings.TrimSpace(strings.ToLower(id))
+	if id == "" {
+		return "custom"
+	}
+	// allow already-renamed forms
+	if alt, ok := codexReservedProviderIDs[id]; ok {
+		return alt
+	}
+	return id
+}
+
 // codexProviderID picks a stable toml table key for a vendor.
 func codexProviderID(p Provider) string {
-	if id := slugify(p.ID); id != "" && id != "custom" && !strings.HasPrefix(id, "p_") {
-		// prefer semantic ids like ollama / deepseek
+	var id string
+	if sid := slugify(p.ID); sid != "" && sid != "custom" && !strings.HasPrefix(sid, "p_") {
+		// prefer semantic ids (sanitized — never use reserved built-ins)
 		n := strings.ToLower(p.Name + p.BaseURL)
 		if strings.Contains(n, "ollama") {
-			return "ollama"
-		}
-		if strings.Contains(n, "deepseek") {
-			return "deepseek"
-		}
-		if strings.Contains(n, "openai") {
-			return "openai"
+			id = "ollama-local"
+		} else if strings.Contains(n, "deepseek") {
+			id = "deepseek"
+		} else if strings.Contains(n, "openai") {
+			id = "openai-custom"
+		} else {
+			id = sid
 		}
 	}
-	if id := deriveProviderID(p.BaseURL, p.Name); id != "" {
-		return id
+	if id == "" {
+		if d := deriveProviderID(p.BaseURL, p.Name); d != "" {
+			id = d
+		} else {
+			id = slugify(p.Name)
+		}
 	}
-	return slugify(p.Name)
+	return sanitizeCodexProviderID(id)
 }
