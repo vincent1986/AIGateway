@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       upload_release:
-        description: "Upload artifacts to GitHub Release tag"
+        description: "Upload artifacts to GitHub Release tag (e.g. v2.0.0)"
         required: false
-        default: "v1.0.0"
+        default: "v2.0.0"
 
 permissions:
   contents: write
@@ -19,9 +19,23 @@ jobs:
     name: Linux amd64
     runs-on: ubuntu-22.04
     steps:
+      - name: Resolve tag / version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.upload_release }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          # strip leading v for filename suffix, keep TAG for gh release
+          VER="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "ver=$VER" >> "$GITHUB_OUTPUT"
+          echo "Resolved TAG=$TAG VER=$VER"
+
       - uses: actions/checkout@v4
         with:
-          ref: ${{ startsWith(github.ref, 'refs/tags/') && github.ref || 'v1.0.0' }}
+          ref: ${{ steps.ver.outputs.tag }}
 
       - uses: actions/setup-go@v5
         with:
@@ -49,21 +63,22 @@ jobs:
 
       - name: Package tarball
         run: |
+          VER="${{ steps.ver.outputs.ver }}"
           mkdir -p dist
           BIN="build/bin/AIGateway"
           test -f "$BIN" || BIN="build/bin/AIGateway"
           cp "$BIN" dist/AIGateway
           chmod +x dist/AIGateway
-          tar -C dist -czf AIGateway-v1.0.0-linux-amd64.tar.gz AIGateway
-          shasum -a 256 AIGateway-v1.0.0-linux-amd64.tar.gz | tee SHA256SUMS-linux.txt
-          ls -lh AIGateway-v1.0.0-linux-amd64.tar.gz
+          tar -C dist -czf "AIGateway-v${VER}-linux-amd64.tar.gz" AIGateway
+          shasum -a 256 "AIGateway-v${VER}-linux-amd64.tar.gz" | tee SHA256SUMS-linux.txt
+          ls -lh "AIGateway-v${VER}-linux-amd64.tar.gz"
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AIGateway-v1.0.0-linux-amd64
+          name: AIGateway-linux-amd64
           path: |
-            AIGateway-v1.0.0-linux-amd64.tar.gz
+            AIGateway-v*-linux-amd64.tar.gz
             SHA256SUMS-linux.txt
 
       - name: Attach to GitHub Release
@@ -71,5 +86,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${{ github.event.inputs.upload_release || github.ref_name }}"
-          gh release upload "$TAG" AIGateway-v1.0.0-linux-amd64.tar.gz --clobber
+          TAG="${{ steps.ver.outputs.tag }}"
+          VER="${{ steps.ver.outputs.ver }}"
+          gh release upload "$TAG" "AIGateway-v${VER}-linux-amd64.tar.gz" --clobber
