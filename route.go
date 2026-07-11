@@ -69,9 +69,11 @@ ORDER BY r.priority ASC, r.id ASC
 		}
 		c.Provider.ID = pid
 		c.Provider.UseProxy = useProxyFromSQL(useProxy)
+		c.Provider.FormatStandard = fmtStd
 		c.Format = fmtStd
 		if c.Format == "" {
 			c.Format = "openai"
+			c.Provider.FormatStandard = "openai"
 		}
 		if c.Provider.BaseURL == "" || !providerAPIKeyOK(c.Provider) {
 			continue

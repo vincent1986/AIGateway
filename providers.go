@@ -47,6 +47,8 @@ type Provider struct {
 	// (if proxy is running). Local providers like Ollama default to false.
 	// nil means auto (local → false, others → true).
 	UseProxy *bool `json:"useProxy"`
+	// FormatStandard: "openai" normalizes payloads; "passthrough" forwards body as-is.
+	FormatStandard string `json:"formatStandard"`
 	// TokenPackages: purchased token plans for this vendor
 	TokenPackages []TokenPackage `json:"tokenPackages"`
 }

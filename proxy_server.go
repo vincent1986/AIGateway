@@ -422,13 +422,8 @@ func (p *proxyServer) forwardOpenAI(w http.ResponseWriter, r *http.Request, open
 	}
 
 	// Codex / newer OpenAI clients send role=developer; most vendors reject it.
+	// Applied per-candidate when format is openai (not passthrough).
 	baseBody := body
-	if openAIPath == "chat/completions" || strings.HasPrefix(openAIPath, "chat/completions") {
-		baseBody = normalizeUpstreamChatBody(baseBody)
-		if isStreamRequest(baseBody) {
-			baseBody = ensureStreamUsage(baseBody)
-		}
-	}
 	stream := isStreamRequest(baseBody)
 
 	var lastStatus int
@@ -438,6 +433,20 @@ func (p *proxyServer) forwardOpenAI(w http.ResponseWriter, r *http.Request, open
 	for i, cand := range cands {
 		prov := cand.Provider
 		reqBody := rewriteRequestModel(baseBody, cand.UpstreamModel)
+		// openai format: normalize chat payloads; passthrough: raw body
+		fmtStd := cand.Format
+		if fmtStd == "" {
+			fmtStd = prov.FormatStandard
+		}
+		if fmtStd != "passthrough" {
+			if openAIPath == "chat/completions" || strings.HasPrefix(openAIPath, "chat/completions") {
+				reqBody = normalizeUpstreamChatBody(reqBody)
+				if isStreamRequest(reqBody) {
+					reqBody = ensureStreamUsage(reqBody)
+				}
+			}
+		}
+		stream = isStreamRequest(reqBody)
 
 		upstreamURL := joinOpenAIURL(prov.BaseURL, openAIPath)
 		if r.URL.RawQuery != "" {
@@ -502,7 +511,18 @@ func (p *proxyServer) forwardOpenAI(w http.ResponseWriter, r *http.Request, open
 				}
 				break
 			}
-			// success stream path
+			// success stream path — peek first chunk for early error SSE before committing headers
+			peek := make([]byte, 4096)
+			n0, peekErr := resp.Body.Read(peek)
+			peekData := peek[:max(0, n0)]
+			if n0 > 0 && isFailoverBody(peekData) && i+1 < len(cands) {
+				p.logf("流式首包熔断 provider=%s → next", prov.Name)
+				_ = resp.Body.Close()
+				lastStatus = resp.StatusCode
+				lastBody = peekData
+				time.Sleep(50 * time.Millisecond)
+				continue
+			}
 			for k, vv := range resp.Header {
 				lk := strings.ToLower(k)
 				if lk == "connection" || lk == "keep-alive" || lk == "transfer-encoding" || lk == "proxy-authenticate" || lk == "proxy-authorization" || lk == "te" || lk == "trailers" || lk == "upgrade" {
@@ -515,6 +535,18 @@ func (p *proxyServer) forwardOpenAI(w http.ResponseWriter, r *http.Request, open
 			w.WriteHeader(resp.StatusCode)
 			flusher, ok := w.(http.Flusher)
 			var acc bytes.Buffer
+			if n0 > 0 {
+				_, _ = w.Write(peekData)
+				_, _ = acc.Write(peekData)
+				if ok {
+					flusher.Flush()
+				}
+			}
+			if peekErr != nil {
+				_ = resp.Body.Close()
+				recordUsageFromSSE(acc.Bytes(), prov.Name, model, openAIPath, resp.StatusCode)
+				return
+			}
 			buf := make([]byte, 4096)
 			for {
 				n, readErr := resp.Body.Read(buf)

@@ -192,6 +192,8 @@ function normalizeProvider(p) {
       else sawActive = true;
     }
   }
+  let formatStandard = p.formatStandard || p.FormatStandard || "openai";
+  if (formatStandard !== "passthrough") formatStandard = "openai";
   return {
     id: p.id || uid(),
     name,
@@ -199,6 +201,7 @@ function normalizeProvider(p) {
     apiKey: p.apiKey || p.APIKey || "",
     color: p.color || COLORS[0],
     useProxy,
+    formatStandard,
     tokenPackages: pkgs,
     models: (p.models || []).map((m) => ({
       id: m.id,
@@ -706,8 +709,10 @@ function renderProvidersPage() {
 }
 
 function renderConfigsPage() {
-  const codex = toolConfigs.codex;
-  const claude = toolConfigs.claude;
+  const cards = ["codex", "claude", "openclaw", "harness"].map((k) => {
+    const names = { codex: "ChatGPT", claude: "Claude Code", openclaw: "OpenClaw", harness: "Harness" };
+    return toolConfigs[k] || placeholder(k, names[k] || k);
+  });
   return `
     <div class="full-page">
       <div class="config-page">
@@ -723,8 +728,7 @@ function renderConfigsPage() {
           </div>
         </div>
         <div class="apps-grid">
-          ${renderAppCard(codex || placeholder("codex", "ChatGPT"))}
-          ${renderAppCard(claude || placeholder("claude", "Claude Code"))}
+          ${cards.map((st) => renderAppCard(st)).join("")}
         </div>
       </div>
     </div>
@@ -1292,6 +1296,20 @@ function renderDetail(p) {
                     : t("detail.proxyHintOff")
                 }
               </span>
+            </div>
+            <div class="field full">
+              <label>${t("detail.formatStandard")}</label>
+              <div class="actions" style="margin-top:4px">
+                <label class="stat-pill" style="cursor:pointer;gap:8px">
+                  <input type="radio" name="f-format" id="f-format-openai" value="openai" ${(p.formatStandard || "openai") !== "passthrough" ? "checked" : ""} />
+                  ${t("detail.formatOpenAI")}
+                </label>
+                <label class="stat-pill" style="cursor:pointer;gap:8px">
+                  <input type="radio" name="f-format" id="f-format-pass" value="passthrough" ${p.formatStandard === "passthrough" ? "checked" : ""} />
+                  ${t("detail.formatPassthrough")}
+                </label>
+              </div>
+              <span class="hint">${t("detail.formatHint")}</span>
             </div>
           </div>
           <div class="actions" style="margin-top:16px">
@@ -2097,6 +2115,8 @@ function readFormInto(p) {
   if (color) p.color = color.value;
   const proxyOn = document.getElementById("f-proxy-on");
   if (proxyOn) p.useProxy = !!proxyOn.checked;
+  const fmtPass = document.getElementById("f-format-pass");
+  if (fmtPass) p.formatStandard = fmtPass.checked ? "passthrough" : "openai";
 }
 
 async function applyModelToTool(kind, modelId) {

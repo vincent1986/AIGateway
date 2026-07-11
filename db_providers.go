@@ -7,7 +7,7 @@ import (
 
 // loadProvidersFromDB returns providers assembled from SQLite tables.
 func loadProvidersFromDB(db *sql.DB) ([]Provider, error) {
-	rows, err := db.Query(`SELECT id, name, base_url, api_key, color, use_proxy FROM providers ORDER BY name COLLATE NOCASE`)
+	rows, err := db.Query(`SELECT id, name, base_url, api_key, color, use_proxy, format_standard FROM providers ORDER BY name COLLATE NOCASE`)
 	if err != nil {
 		return nil, err
 	}
@@ -18,10 +18,15 @@ func loadProvidersFromDB(db *sql.DB) ([]Provider, error) {
 	for rows.Next() {
 		var p Provider
 		var useProxy sql.NullInt64
-		if err := rows.Scan(&p.ID, &p.Name, &p.BaseURL, &p.APIKey, &p.Color, &useProxy); err != nil {
+		var fmtStd string
+		if err := rows.Scan(&p.ID, &p.Name, &p.BaseURL, &p.APIKey, &p.Color, &useProxy, &fmtStd); err != nil {
 			return nil, err
 		}
 		p.UseProxy = useProxyFromSQL(useProxy)
+		p.FormatStandard = fmtStd
+		if p.FormatStandard == "" {
+			p.FormatStandard = "openai"
+		}
 		p.Models = []ProviderModel{}
 		p.TokenPackages = []TokenPackage{}
 		index[p.ID] = len(list)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -101,9 +102,13 @@ func replaceProvidersInDB(db *sql.DB, list []Provider) error {
 		if p.ID == "" {
 			continue
 		}
+		fmtStd := strings.TrimSpace(p.FormatStandard)
+		if fmtStd != "passthrough" {
+			fmtStd = "openai"
+		}
 		_, err := tx.Exec(`INSERT INTO providers(id, name, base_url, api_key, color, use_proxy, format_standard, enabled, created_at, updated_at)
 			VALUES(?,?,?,?,?,?,?,?,?,?)`,
-			p.ID, p.Name, p.BaseURL, p.APIKey, p.Color, useProxyToSQL(p.UseProxy), "openai", 1, now, now)
+			p.ID, p.Name, p.BaseURL, p.APIKey, p.Color, useProxyToSQL(p.UseProxy), fmtStd, 1, now, now)
 		if err != nil {
 			return err
 		}

@@ -177,10 +177,19 @@ func savePreWriteSnapshot(kind ToolKind, path string, content []byte) {
 	_ = os.WriteFile(filepath.Join(dir, "pre-edit-"+ts+ext), content, 0o644)
 }
 
+func isKnownToolKind(k ToolKind) bool {
+	switch k {
+	case ToolCodex, ToolClaude, ToolOpenClaw, ToolHarness:
+		return true
+	default:
+		return false
+	}
+}
+
 // BackupDefaultConfig manually (re)saves current config as the restorable default.
 func (a *App) BackupDefaultConfig(kind, path string) (ToolConfigStatus, error) {
 	k := ToolKind(strings.ToLower(strings.TrimSpace(kind)))
-	if k != ToolCodex && k != ToolClaude {
+	if !isKnownToolKind(k) {
 		return ToolConfigStatus{}, fmt.Errorf("未知工具类型: %s", kind)
 	}
 	path = expandPath(strings.TrimSpace(path))
@@ -199,7 +208,7 @@ func (a *App) BackupDefaultConfig(kind, path string) (ToolConfigStatus, error) {
 // RestoreDefaultConfig restores the file from the default backup snapshot.
 func (a *App) RestoreDefaultConfig(kind string) (ToolConfigStatus, error) {
 	k := ToolKind(strings.ToLower(strings.TrimSpace(kind)))
-	if k != ToolCodex && k != ToolClaude {
+	if !isKnownToolKind(k) {
 		return ToolConfigStatus{}, fmt.Errorf("未知工具类型: %s", kind)
 	}
 	meta, ok := loadBackupMeta(k)
@@ -241,7 +250,7 @@ func (a *App) RestoreDefaultConfig(kind string) (ToolConfigStatus, error) {
 // ClearDefaultBackup removes the default backup (does not touch the live config).
 func (a *App) ClearDefaultBackup(kind string) (ToolConfigStatus, error) {
 	k := ToolKind(strings.ToLower(strings.TrimSpace(kind)))
-	if k != ToolCodex && k != ToolClaude {
+	if !isKnownToolKind(k) {
 		return ToolConfigStatus{}, fmt.Errorf("未知工具类型: %s", kind)
 	}
 	if m, ok := loadBackupMeta(k); ok && m.BackupPath != "" {

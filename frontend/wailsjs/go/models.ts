@@ -226,6 +226,7 @@ export namespace main {
 	    color: string;
 	    models: ProviderModel[];
 	    useProxy?: boolean;
+	    formatStandard: string;
 	    tokenPackages: TokenPackage[];
 	
 	    static createFrom(source: any = {}) {
@@ -241,6 +242,7 @@ export namespace main {
 	        this.color = source["color"];
 	        this.models = this.convertValues(source["models"], ProviderModel);
 	        this.useProxy = source["useProxy"];
+	        this.formatStandard = source["formatStandard"];
 	        this.tokenPackages = this.convertValues(source["tokenPackages"], TokenPackage);
 	    }
 	
