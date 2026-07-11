@@ -7,14 +7,14 @@
   "frontend:dev:watcher": "npm run dev",
   "frontend:dev:serverUrl": "auto",
   "author": {
-    "name": "sven",
+    "name": "Mars Waller",
     "email": "zxc.cnign@gmail.com"
   },
   "info": {
-    "companyName": "AIGateway",
+    "companyName": "Mars Waller",
     "productName": "AIGateway",
     "productVersion": "2.0.0",
-    "copyright": "Copyright © 2026",
+    "copyright": "Copyright © 2026 Mars Waller",
     "comments": "AI model manager for Codex, ChatGPT, Claude, OpenClaw, Harness — save tokens, find cheaper providers"
   }
 }

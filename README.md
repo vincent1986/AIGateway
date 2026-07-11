@@ -97,6 +97,10 @@ wails build -platform linux/amd64   # Linux 主机 / CI
 
 详见 [docs/RELEASE_NOTES_v1.0.0.md](docs/RELEASE_NOTES_v1.0.0.md)。
 
+## Team
+
+**Mars Waller**
+
 ## License
 
-[MIT](LICENSE) © 2026 AIGateway contributors
+[MIT](LICENSE) © 2026 Mars Waller
