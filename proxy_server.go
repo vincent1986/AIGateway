@@ -30,7 +30,7 @@ type ProxyConfig struct {
 // ProxyStatus is exposed to the UI.
 type ProxyStatus struct {
 	Running   bool   `json:"running"`
-	BaseURL   string `json:"baseUrl"`   // http://127.0.0.1:18080/v1
+	BaseURL   string `json:"baseUrl"` // http://127.0.0.1:18080/v1
 	Host      string `json:"host"`
 	Port      int    `json:"port"`
 	AutoStart bool   `json:"autoStart"`
@@ -153,6 +153,9 @@ func (p *proxyServer) setConfig(cfg ProxyConfig) error {
 	if cfg.Port <= 0 || cfg.Port > 65535 {
 		return fmt.Errorf("端口无效: %d", cfg.Port)
 	}
+	if err := validateProxyExposure(cfg); err != nil {
+		return err
+	}
 	p.mu.Lock()
 	running := p.run
 	p.cfg = cfg
@@ -176,6 +179,12 @@ func (p *proxyServer) start() error {
 	}
 	cfg := p.cfg
 	p.mu.Unlock()
+	if err := validateProxyExposure(cfg); err != nil {
+		p.mu.Lock()
+		p.err = err.Error()
+		p.mu.Unlock()
+		return err
+	}
 
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
 	mux := http.NewServeMux()
@@ -313,6 +322,20 @@ func (p *proxyServer) checkListenAuth(r *http.Request) error {
 		return nil
 	}
 	return fmt.Errorf("unauthorized")
+}
+
+func validateProxyExposure(cfg ProxyConfig) error {
+	host := strings.TrimSpace(strings.Trim(cfg.Host, "[]"))
+	if host == "" || strings.EqualFold(host, "localhost") {
+		return nil
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return nil
+	}
+	if strings.TrimSpace(cfg.ListenKey) == "" {
+		return fmt.Errorf("监听非本机地址 %q 时必须设置接入密钥", cfg.Host)
+	}
+	return nil
 }
 
 func (p *proxyServer) handleModels(w http.ResponseWriter, r *http.Request) {
@@ -459,6 +482,13 @@ func (p *proxyServer) forwardOpenAI(w http.ResponseWriter, r *http.Request, open
 			}
 		}
 		stream = isStreamRequest(reqBody)
+
+		if isAnthropicProvider(prov) && (openAIPath == "chat/completions" || strings.HasPrefix(openAIPath, "chat/completions")) {
+			p.logf("%s %s → %s client_model=%s up=%s try=%d/%d anthropic stream=%v",
+				r.Method, openAIPath, prov.Name, model, cand.UpstreamModel, i+1, len(cands), stream)
+			p.forwardAnthropicFromOpenAI(w, r, prov, reqBody, stream, false)
+			return
+		}
 
 		upstreamURL := joinOpenAIURL(prov.BaseURL, openAIPath)
 		if r.URL.RawQuery != "" {
@@ -644,6 +674,74 @@ func ensureStreamUsage(body []byte) []byte {
 		return body
 	}
 	return b
+}
+
+func (p *proxyServer) forwardAnthropicFromOpenAI(w http.ResponseWriter, r *http.Request, prov Provider, openaiBody []byte, stream, asResponses bool) {
+	var chatBody []byte
+	var err error
+	if asResponses {
+		chatBody, err = responsesBodyToChat(openaiBody)
+		if err != nil {
+			writeJSON(w, 400, map[string]any{"error": map[string]any{"message": err.Error(), "type": "invalid_request_error"}})
+			return
+		}
+	} else {
+		chatBody = openaiBody
+	}
+	anthBody, err := convertOpenAIChatToAnthropic(chatBody)
+	if err != nil {
+		writeJSON(w, 400, map[string]any{"error": map[string]any{"message": "convert: " + err.Error(), "type": "invalid_request_error"}})
+		return
+	}
+	anthBody = forceStreamFalse(anthBody)
+
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, anthropicMessagesURL(prov.BaseURL), bytes.NewReader(anthBody))
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", strings.TrimSpace(prov.APIKey))
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	client := &http.Client{Timeout: 180 * time.Second, Transport: p.client.Transport}
+	resp, err := client.Do(req)
+	if err != nil {
+		writeJSON(w, 502, map[string]any{"error": map[string]any{"message": "upstream: " + err.Error(), "type": "proxy_error"}})
+		return
+	}
+	defer resp.Body.Close()
+	upBody, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(resp.StatusCode)
+		_, _ = w.Write(upBody)
+		p.logf("anthropic HTTP %d", resp.StatusCode)
+		return
+	}
+
+	model := extractModel(openaiBody, r)
+	chatOut, err := convertAnthropicToOpenAIChat(upBody, model)
+	if err != nil {
+		writeJSON(w, 502, map[string]any{"error": map[string]any{"message": err.Error(), "type": "proxy_error"}})
+		return
+	}
+	if asResponses {
+		out, err := chatBodyToResponses(chatOut, model)
+		if err != nil {
+			writeJSON(w, 502, map[string]any{"error": map[string]any{"message": err.Error(), "type": "proxy_error"}})
+			return
+		}
+		writeResponsesResult(w, out, stream)
+		recordUsageFromPayload(chatOut, prov.Name, model, "responses", 200)
+		p.logf("anthropic→responses OK model=%s", model)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(chatOut)
+	recordUsageFromPayload(chatOut, prov.Name, model, "chat/completions", 200)
+	p.logf("anthropic→openai chat OK model=%s", model)
 }
 
 func extractModel(body []byte, r *http.Request) string {
@@ -951,10 +1049,8 @@ func rememberOriginalBases(content, localBase string) error {
 		if base == "" || isLocalProxyURL(base) {
 			continue
 		}
-		// only save first seen original (don't overwrite with local)
-		if _, ok := existing[id]; !ok {
-			existing[id] = base
-		}
+		// Current non-local config is the best restore target; refresh stale backups.
+		existing[id] = base
 	}
 	if err := os.MkdirAll(managerRoot(), 0o755); err != nil {
 		return err
@@ -1023,12 +1119,23 @@ func setProviderField(content, providerID, field, value string) string {
 	}
 	end := findTomlTableEnd(content, loc[1])
 	block := content[loc[0]:end]
-	kv, order := parseProviderKV(block)
-	if _, ok := kv[field]; !ok {
-		order = append(order, field)
+	lines := strings.Split(block, "\n")
+	fieldRe := regexp.MustCompile(`^(\s*)` + regexp.QuoteMeta(field) + `\s*=`)
+	for i, line := range lines {
+		if fieldRe.MatchString(line) {
+			prefix := fieldRe.FindStringSubmatch(line)[1]
+			lines[i] = prefix + field + ` = "` + escapeTomlString(value) + `"`
+			return content[:loc[0]] + strings.Join(lines, "\n") + content[end:]
+		}
 	}
-	kv[field] = value
-	return content[:loc[0]] + rebuildProviderBlock(providerID, kv, order) + content[end:]
+	insert := field + ` = "` + escapeTomlString(value) + `"`
+	if len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+		lines[len(lines)-1] = insert
+		lines = append(lines, "")
+	} else {
+		lines = append(lines, insert)
+	}
+	return content[:loc[0]] + strings.Join(lines, "\n") + content[end:]
 }
 
 // removeProviderField drops a key from [model_providers.<id>] if present.
@@ -1040,18 +1147,21 @@ func removeProviderField(content, providerID, field string) string {
 	}
 	end := findTomlTableEnd(content, loc[1])
 	block := content[loc[0]:end]
-	kv, order := parseProviderKV(block)
-	if _, ok := kv[field]; !ok {
+	lines := strings.Split(block, "\n")
+	fieldRe := regexp.MustCompile(`^\s*` + regexp.QuoteMeta(field) + `\s*=`)
+	out := make([]string, 0, len(lines))
+	changed := false
+	for _, line := range lines {
+		if fieldRe.MatchString(line) {
+			changed = true
+			continue
+		}
+		out = append(out, line)
+	}
+	if !changed {
 		return content
 	}
-	delete(kv, field)
-	var order2 []string
-	for _, k := range order {
-		if k != field {
-			order2 = append(order2, k)
-		}
-	}
-	return content[:loc[0]] + rebuildProviderBlock(providerID, kv, order2) + content[end:]
+	return content[:loc[0]] + strings.Join(out, "\n") + content[end:]
 }
 
 func rebuildProviderBlock(providerID string, kv map[string]string, order []string) string {

@@ -22,9 +22,9 @@ type ProviderModel struct {
 
 // TokenPackage is a purchased / allocated token quota plan for a vendor.
 type TokenPackage struct {
-	ID          string  `json:"id"`
-	Name        string  `json:"name"`        // e.g. "标准 100 万"
-	TotalTokens int64   `json:"totalTokens"` // package quota (tokens)
+	ID          string `json:"id"`
+	Name        string `json:"name"`        // e.g. "标准 100 万"
+	TotalTokens int64  `json:"totalTokens"` // package quota (tokens)
 	// UsedOffset: tokens already consumed before tracking started (manual)
 	UsedOffset int64   `json:"usedOffset"`
 	Price      float64 `json:"price"`    // optional cost
@@ -409,6 +409,30 @@ func (a *App) probeProvider(baseURL, apiKey string) ConnectionTestResult {
 		return res
 	}
 
+	if isAnthropicProvider(Provider{BaseURL: baseURL}) {
+		items, status, latency, endpoint, err := fetchModelsAnthropicDetailed(baseURL, apiKey)
+		res.Endpoint = endpoint
+		res.StatusCode = status
+		res.LatencyMs = latency
+		if err != nil {
+			res.Message = "连接失败"
+			res.Error = err.Error()
+			return res
+		}
+		res.OK = true
+		res.ModelCount = len(items)
+		res.Message = fmt.Sprintf("连接成功，发现 %d 个 Anthropic 模型", len(items))
+		n := len(items)
+		if n > 8 {
+			n = 8
+		}
+		res.Sample = make([]string, 0, n)
+		for i := 0; i < n; i++ {
+			res.Sample = append(res.Sample, items[i].ID)
+		}
+		return res
+	}
+
 	endpoint := modelsEndpoint(baseURL)
 	res.Endpoint = endpoint
 
@@ -476,6 +500,65 @@ func (a *App) probeProvider(baseURL, apiKey string) ConnectionTestResult {
 		res.Sample = append(res.Sample, items[i].ID)
 	}
 	return res
+}
+
+func fetchModelsAnthropicDetailed(baseURL, apiKey string) ([]FetchModelItem, int, int64, string, error) {
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	endpoint := base + "/v1/models"
+	if strings.HasSuffix(strings.ToLower(base), "/v1") {
+		endpoint = base + "/models"
+	}
+	if strings.HasSuffix(strings.ToLower(base), "/models") {
+		endpoint = base
+	}
+	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, 0, 0, endpoint, err
+	}
+	req.Header.Set("x-api-key", strings.TrimSpace(apiKey))
+	req.Header.Set("anthropic-version", "2023-06-01")
+	start := time.Now()
+	resp, err := newHTTPClient(30 * time.Second).Do(req)
+	latency := time.Since(start).Milliseconds()
+	if err != nil {
+		return nil, 0, latency, endpoint, fmt.Errorf("请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if err != nil {
+		return nil, resp.StatusCode, latency, endpoint, fmt.Errorf("读取响应失败: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		msg := strings.TrimSpace(string(body))
+		if len(msg) > 400 {
+			msg = msg[:400] + "…"
+		}
+		return nil, resp.StatusCode, latency, endpoint, fmt.Errorf("HTTP %d: %s", resp.StatusCode, msg)
+	}
+	var payload struct {
+		Data []struct {
+			ID          string `json:"id"`
+			DisplayName string `json:"display_name"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, resp.StatusCode, latency, endpoint, fmt.Errorf("无法解析 Anthropic 模型列表: %w", err)
+	}
+	items := make([]FetchModelItem, 0, len(payload.Data))
+	for _, m := range payload.Data {
+		if strings.TrimSpace(m.ID) == "" {
+			continue
+		}
+		name := m.DisplayName
+		if name == "" {
+			name = m.ID
+		}
+		items = append(items, FetchModelItem{ID: m.ID, Name: name, OwnedBy: "anthropic"})
+	}
+	if len(items) == 0 {
+		return nil, resp.StatusCode, latency, endpoint, fmt.Errorf("接口未返回模型列表")
+	}
+	return items, resp.StatusCode, latency, endpoint, nil
 }
 
 func modelsEndpoint(baseURL string) string {

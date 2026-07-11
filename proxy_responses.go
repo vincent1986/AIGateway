@@ -14,8 +14,8 @@ import (
 // handleResponses implements POST /v1/responses (OpenAI Responses API).
 // Codex with wire_api = "responses" uses this path.
 // Most third-party vendors only support /v1/chat/completions, so we:
-//  1) try upstream /v1/responses first for OpenAI-like hosts
-//  2) otherwise convert request → chat/completions → wrap back as responses
+//  1. try upstream /v1/responses first for OpenAI-like hosts
+//  2. otherwise convert request → chat/completions → wrap back as responses
 func (p *proxyServer) handleResponses(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -58,6 +58,11 @@ func (p *proxyServer) handleResponses(w http.ResponseWriter, r *http.Request) {
 
 	stream := isStreamRequest(body)
 	p.logf("POST responses → %s model=%s up=%s stream=%v", prov.Name, model, upstreamModel, stream)
+
+	if isAnthropicProvider(prov) {
+		p.forwardAnthropicFromOpenAI(w, r, prov, body, stream, true)
+		return
+	}
 
 	// Prefer native /responses for OpenAI / Azure OpenAI hosts
 	if supportsNativeResponses(prov.BaseURL) {
@@ -256,10 +261,10 @@ func (p *proxyServer) streamResponsesViaChat(w http.ResponseWriter, r *http.Requ
 				sse.emit("response.output_item.added", map[string]any{
 					"output_index": 0,
 					"item": map[string]any{
-						"type":   "message",
-						"id":     msgID,
-						"role":   "assistant",
-						"status": "in_progress",
+						"type":    "message",
+						"id":      msgID,
+						"role":    "assistant",
+						"status":  "in_progress",
 						"content": []any{},
 					},
 				})
@@ -371,9 +376,9 @@ func (p *proxyServer) streamResponsesViaChat(w http.ResponseWriter, r *http.Requ
 							outIdx = 1 + idx
 						}
 						sse.emit("response.function_call_arguments.delta", map[string]any{
-							"item_id":       itemID,
-							"output_index":  outIdx,
-							"delta":         argDelta,
+							"item_id":      itemID,
+							"output_index": outIdx,
+							"delta":        argDelta,
 						})
 					}
 				}
@@ -1241,7 +1246,8 @@ func responsesBodyToChat(body []byte) ([]byte, error) {
 
 // inputItemsToChatMessages converts Responses API input items into chat messages.
 // Handles Codex multi-turn tool loops:
-//   message / input_text / function_call / function_call_output / reasoning(skip)
+//
+//	message / input_text / function_call / function_call_output / reasoning(skip)
 func inputItemsToChatMessages(items []any) []map[string]any {
 	out := make([]map[string]any, 0, len(items))
 	// pending assistant tool_calls to merge into one assistant message
@@ -1592,4 +1598,64 @@ func chatBodyToResponses(chatBody []byte, model string) ([]byte, error) {
 		out["usage"] = normalizeUsageToResponses(nil)
 	}
 	return json.Marshal(out)
+}
+
+func writeResponsesResult(w http.ResponseWriter, body []byte, stream bool) {
+	if !stream {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(body)
+		return
+	}
+
+	var response map[string]any
+	if err := json.Unmarshal(body, &response); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]any{
+			"error": map[string]any{"message": "invalid converted response", "type": "proxy_error"},
+		})
+		return
+	}
+	sse := newResponsesSSE(w)
+	if !sse.ok {
+		http.Error(w, "streaming unsupported", 500)
+		return
+	}
+	sse.begin()
+	created := cloneMap(response)
+	created["status"] = "in_progress"
+	created["output"] = []any{}
+	sse.emit("response.created", map[string]any{"response": created})
+	sse.emit("response.in_progress", map[string]any{"response": created})
+
+	output, _ := response["output"].([]any)
+	for i, raw := range output {
+		item, _ := raw.(map[string]any)
+		if item == nil {
+			continue
+		}
+		sse.emit("response.output_item.added", map[string]any{"output_index": i, "item": item})
+		switch item["type"] {
+		case "message":
+			content, _ := item["content"].([]any)
+			for j, rawPart := range content {
+				part, _ := rawPart.(map[string]any)
+				if part == nil {
+					continue
+				}
+				sse.emit("response.content_part.added", map[string]any{"output_index": i, "content_index": j, "part": part})
+				if delta, _ := part["text"].(string); delta != "" {
+					sse.emit("response.output_text.delta", map[string]any{"output_index": i, "content_index": j, "delta": delta, "logprobs": []any{}})
+				}
+				sse.emit("response.output_text.done", map[string]any{"output_index": i, "content_index": j, "text": part["text"], "logprobs": []any{}})
+				sse.emit("response.content_part.done", map[string]any{"output_index": i, "content_index": j, "part": part})
+			}
+		case "function_call":
+			if delta, _ := item["arguments"].(string); delta != "" {
+				sse.emit("response.function_call_arguments.delta", map[string]any{"output_index": i, "delta": delta})
+			}
+			sse.emit("response.function_call_arguments.done", map[string]any{"output_index": i, "arguments": item["arguments"]})
+		}
+		sse.emit("response.output_item.done", map[string]any{"output_index": i, "item": item})
+	}
+	sse.emit("response.completed", map[string]any{"response": response})
 }
