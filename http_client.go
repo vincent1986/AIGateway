@@ -14,7 +14,7 @@ import (
 //   - NEVER proxies loopback / unspecified hosts (127.0.0.1, localhost, ::1, 0.0.0.0)
 //
 // Without the loopback bypass, Windows system proxy (Clash / corporate proxy) often
-// breaks Ollama (127.0.0.1:11434) and can mis-route local AI Switch proxy traffic.
+// breaks Ollama (127.0.0.1:11434) and can mis-route local AIGateway proxy traffic.
 func newHTTPTransport() *http.Transport {
 	return &http.Transport{
 		Proxy:                 smartHTTPProxy,
