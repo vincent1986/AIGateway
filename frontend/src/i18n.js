@@ -1,26 +1,41 @@
-/** AIGateway i18n — popup language picker (EN / 繁中 / 日本語). */
+/** AIGateway i18n — multi-locale with popup language picker. */
 
-import en from "./locales/en.json";
+import zhCN from "./locales/zh-CN.json";
 import zhTW from "./locales/zh-TW.json";
+import en from "./locales/en.json";
 import ja from "./locales/ja.json";
+import ko from "./locales/ko.json";
+import de from "./locales/de.json";
+import vi from "./locales/vi.json";
+import th from "./locales/th.json";
 
 export const LOCALE_KEY = "codex.ui.locale";
 
 /** @typedef {{ id: string, label: string, native: string, htmlLang: string, bcp47: string }} LocaleMeta */
 
-/** Supported languages in the popup (order = display order). Default: English. */
+/** Supported languages for the language popup (order = display order). */
 export const LOCALES = /** @type {LocaleMeta[]} */ ([
-  { id: "en", label: "English", native: "English", htmlLang: "en", bcp47: "en-US" },
+  { id: "zh", label: "简体中文", native: "简体中文", htmlLang: "zh-CN", bcp47: "zh-CN" },
   { id: "zh-TW", label: "繁體中文", native: "繁體中文", htmlLang: "zh-TW", bcp47: "zh-TW" },
+  { id: "en", label: "English", native: "English", htmlLang: "en", bcp47: "en-US" },
   { id: "ja", label: "日本語", native: "日本語", htmlLang: "ja", bcp47: "ja-JP" },
+  { id: "ko", label: "한국어", native: "한국어", htmlLang: "ko", bcp47: "ko-KR" },
+  { id: "de", label: "Deutsch", native: "Deutsch", htmlLang: "de", bcp47: "de-DE" },
+  { id: "vi", label: "Tiếng Việt", native: "Tiếng Việt", htmlLang: "vi", bcp47: "vi-VN" },
+  { id: "th", label: "ไทย", native: "ไทย", htmlLang: "th", bcp47: "th-TH" },
 ]);
 
 export const SUPPORTED = LOCALES.map((l) => l.id);
 
 const dict = {
-  en,
+  zh: zhCN,
   "zh-TW": zhTW,
+  en,
   ja,
+  ko,
+  de,
+  vi,
+  th,
 };
 
 /** @type {string} */
@@ -30,17 +45,18 @@ function detectLocale() {
   try {
     const saved = localStorage.getItem(LOCALE_KEY);
     if (saved && SUPPORTED.includes(saved)) return saved;
-    // migrate removed locales to closest supported
-    if (saved === "zh" || saved === "zh-CN") return "zh-TW";
-    if (saved === "ko" || saved === "de" || saved === "vi" || saved === "th") return "en";
+    // migrate old keys
+    if (saved === "zh-CN") return "zh";
   } catch (_) {}
-  // Default: English. Auto-detect only for 繁中 / 日文 system locales.
   const nav = (typeof navigator !== "undefined" ? navigator.language || "" : "").toLowerCase();
-  if (nav.startsWith("zh-tw") || nav.startsWith("zh-hk") || nav.startsWith("zh-mo") || nav === "zh-hant") {
-    return "zh-TW";
-  }
+  if (nav.startsWith("zh-tw") || nav.startsWith("zh-hk") || nav.startsWith("zh-mo") || nav === "zh-hant") return "zh-TW";
+  if (nav.startsWith("zh")) return "zh";
   if (nav.startsWith("ja")) return "ja";
-  // zh-CN and everything else → English
+  if (nav.startsWith("ko")) return "ko";
+  if (nav.startsWith("de")) return "de";
+  if (nav.startsWith("vi")) return "vi";
+  if (nav.startsWith("th")) return "th";
+  if (nav.startsWith("en")) return "en";
   return "en";
 }
 
@@ -75,7 +91,7 @@ export function applyDocumentLang() {
  */
 export function t(key, vars) {
   const table = dict[locale] || dict.en;
-  let s = table[key] ?? dict.en[key] ?? key;
+  let s = table[key] ?? dict.en[key] ?? dict.zh[key] ?? key;
   if (vars) {
     for (const [k, v] of Object.entries(vars)) {
       s = s.replaceAll(`{${k}}`, String(v));
@@ -96,33 +112,30 @@ export function localeBcp47() {
   return getLocaleMeta()?.bcp47 || "en-US";
 }
 
-/** Whether locale uses 万/億 style token formatting. */
+/** Whether locale uses 万/亿 style token formatting. */
 export function usesChineseUnits() {
-  return locale === "zh-TW";
+  return locale === "zh" || locale === "zh-TW";
 }
 
 /**
- * Best-effort translate of backend (Go) Chinese messages when UI is not 繁中.
+ * Best-effort translate of backend (Go) messages when UI is not Chinese.
  * @param {string} msg
  */
 export function tb(msg) {
   if (!msg) return msg;
-  if (locale === "zh-TW") {
-    return String(msg)
-      .replaceAll("厂家", "廠家")
-      .replaceAll("配置", "設定")
-      .replaceAll("失败", "失敗")
-      .replaceAll("请", "請")
-      .replaceAll("连接", "連線")
-      .replaceAll("文件", "檔案")
-      .replaceAll("选择", "選擇")
-      .replaceAll("备份", "備份")
-      .replaceAll("还原", "還原")
-      .replaceAll("启动", "啟動")
-      .replaceAll("停止", "停止");
-  }
-  if (locale === "ja") {
-    // fall through to English mapping for common Go messages
+  if (locale === "zh" || locale === "zh-TW") {
+    if (locale === "zh-TW" && typeof msg === "string") {
+      // light traditional for common backend phrases
+      return msg
+        .replaceAll("厂家", "廠家")
+        .replaceAll("配置", "設定")
+        .replaceAll("失败", "失敗")
+        .replaceAll("成功", "成功")
+        .replaceAll("请", "請")
+        .replaceAll("连接", "連線")
+        .replaceAll("模型", "模型");
+    }
+    return msg;
   }
   const m = String(msg);
 
