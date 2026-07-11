@@ -1,5 +1,10 @@
 package main
 
+import (
+	"fmt"
+	"strings"
+)
+
 // ModelGroupRouteView is one channel under a virtual model group (UI).
 type ModelGroupRouteView struct {
 	ID              string `json:"id"`
@@ -98,4 +103,35 @@ func (a *App) SetModelGroupRouteEnabled(routeID string, enabled bool) error {
 	}
 	_, err = db.Exec(`UPDATE model_group_routes SET enabled = ?, status = ? WHERE id = ?`, boolToInt(enabled), status, routeID)
 	return err
+}
+
+// ReorderModelGroupRoutes sets priority to 10,20,30… by ordered route IDs (drag-and-drop).
+func (a *App) ReorderModelGroupRoutes(groupID string, routeIDs []string) error {
+	if strings.TrimSpace(groupID) == "" || len(routeIDs) == 0 {
+		return fmt.Errorf("groupId and routeIds required")
+	}
+	db, err := openDB()
+	if err != nil {
+		return err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	for i, rid := range routeIDs {
+		prio := (i + 1) * 10
+		if _, err := tx.Exec(`UPDATE model_group_routes SET priority = ? WHERE id = ? AND group_id = ?`, prio, rid, groupID); err != nil {
+			return err
+		}
+		// first enabled route → ok, others standby (unless disabled)
+		st := "standby"
+		if i == 0 {
+			st = "ok"
+		}
+		_, _ = tx.Exec(`UPDATE model_group_routes SET status = ?
+			WHERE id = ? AND group_id = ? AND enabled = 1 AND status != 'exhausted' AND status != 'circuit_open'`,
+			st, rid, groupID)
+	}
+	return tx.Commit()
 }

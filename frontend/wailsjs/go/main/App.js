@@ -90,6 +90,10 @@ export function ReadConfigText(arg1) {
   return window['go']['main']['App']['ReadConfigText'](arg1);
 }
 
+export function ReorderModelGroupRoutes(arg1, arg2) {
+  return window['go']['main']['App']['ReorderModelGroupRoutes'](arg1, arg2);
+}
+
 export function RestoreCodexOriginalBases() {
   return window['go']['main']['App']['RestoreCodexOriginalBases']();
 }

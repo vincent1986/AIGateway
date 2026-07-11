@@ -31,6 +31,7 @@ import {
   ListModelGroups,
   SetModelGroupRoutePriority,
   SetModelGroupRouteEnabled,
+  ReorderModelGroupRoutes,
   InjectGateway,
   RollbackGateway,
 } from "../wailsjs/go/main/App";
@@ -841,7 +842,7 @@ function renderModelsPage() {
         <div class="config-hero">
           <div>
             <h2>${t("models.title")}</h2>
-            <p>${t("models.desc")}</p>
+            <p>${t("models.desc")} ${t("models.dragHint")}</p>
           </div>
           <div class="actions">
             <button class="btn" id="btn-models-refresh" ${modelsLoading ? "disabled" : ""}>
@@ -849,61 +850,55 @@ function renderModelsPage() {
             </button>
           </div>
         </div>
-        <section class="panel">
-          <div class="panel-body">
-            <div class="model-table-wrap table-scroll-lg">
-              ${
-                modelGroups.length
-                  ? `<table class="model-table">
-                <thead>
-                  <tr>
-                    <th>${t("models.colGroup")}</th>
-                    <th>${t("models.colProvider")}</th>
-                    <th>${t("models.colStatus")}</th>
-                    <th>${t("models.colPriority")}</th>
-                    <th>${t("models.colUsed")}</th>
-                    <th style="text-align:right">${t("models.colActions")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${modelGroups
-                    .map((g) => {
-                      const routes = g.routes || g.Routes || [];
-                      if (!routes.length) {
-                        return `<tr><td class="model-id"><strong>${escapeHtml(g.name || g.id)}</strong></td><td colspan="5">${t("common.dash")}</td></tr>`;
-                      }
-                      return routes
-                        .map((r, i) => {
-                          const rid = r.id || r.ID;
-                          const prio = r.priority ?? r.Priority ?? 0;
-                          const used = r.usedTokens ?? r.UsedTokens ?? 0;
-                          const status = r.status || r.Status || "ok";
-                          const en = !!(r.enabled ?? r.Enabled);
-                          return `<tr data-route="${escapeAttr(rid)}" data-group="${escapeAttr(g.id)}">
-                            <td>${i === 0 ? `<strong class="model-id">${escapeHtml(g.name || g.id)}</strong>` : ""}</td>
-                            <td>${escapeHtml(r.providerName || r.ProviderName || r.providerId || "")}<div class="hint mono">${escapeHtml(r.providerModelId || r.ProviderModelID || "")}</div></td>
-                            <td><span class="tag ${routeStatusClass(status)}">${routeStatusLabel(status)}</span></td>
-                            <td class="model-id">${prio}</td>
-                            <td class="model-id">${Number(used).toLocaleString()}</td>
-                            <td>
-                              <div class="row-actions">
-                                <button class="btn btn-sm" data-act="prio-up" ${modelsBusy ? "disabled" : ""}>${t("models.priorityUp")}</button>
-                                <button class="btn btn-sm" data-act="prio-down" ${modelsBusy ? "disabled" : ""}>${t("models.priorityDown")}</button>
-                                <button class="btn btn-sm" data-act="route-toggle" ${modelsBusy ? "disabled" : ""}>${en ? t("models.disable") : t("models.enable")}</button>
-                              </div>
-                            </td>
-                          </tr>`;
-                        })
-                        .join("");
-                    })
-                    .join("")}
-                </tbody>
-              </table>`
-                  : `<div class="empty-models"><strong>${t("models.empty")}</strong></div>`
-              }
-            </div>
-          </div>
-        </section>
+        ${
+          modelGroups.length
+            ? modelGroups
+                .map((g) => {
+                  const routes = (g.routes || g.Routes || [])
+                    .slice()
+                    .sort((a, b) => (a.priority ?? a.Priority ?? 0) - (b.priority ?? b.Priority ?? 0));
+                  return `
+            <section class="panel model-group-panel" data-group="${escapeAttr(g.id)}">
+              <div class="panel-head">
+                <div>
+                  <h3 class="model-id">${escapeHtml(g.name || g.id)}</h3>
+                  <p class="desc">${routes.length} ${t("models.channels")}</p>
+                </div>
+              </div>
+              <div class="panel-body">
+                <div class="route-list" data-group="${escapeAttr(g.id)}">
+                  ${
+                    routes.length
+                      ? routes
+                          .map((r, i) => {
+                            const rid = r.id || r.ID;
+                            const prio = r.priority ?? r.Priority ?? 0;
+                            const used = r.usedTokens ?? r.UsedTokens ?? 0;
+                            const status = r.status || r.Status || "ok";
+                            const en = !!(r.enabled ?? r.Enabled);
+                            return `
+                    <div class="route-row ${i === 0 ? "primary" : ""}" draggable="true" data-route="${escapeAttr(rid)}" data-group="${escapeAttr(g.id)}">
+                      <span class="drag-handle" title="${escapeAttr(t("models.drag"))}">⠿</span>
+                      <div class="route-meta">
+                        <div class="provider-name">${escapeHtml(r.providerName || r.ProviderName || r.providerId || "")}</div>
+                        <div class="hint mono">${escapeHtml(r.providerModelId || r.ProviderModelID || "")}</div>
+                      </div>
+                      <span class="tag ${routeStatusClass(status)}">${routeStatusLabel(status)}</span>
+                      <span class="model-id prio-badge">#${prio}</span>
+                      <span class="model-id used-badge">${Number(used).toLocaleString()}</span>
+                      <button class="btn btn-sm" data-act="route-toggle" ${modelsBusy ? "disabled" : ""}>${en ? t("models.disable") : t("models.enable")}</button>
+                    </div>`;
+                          })
+                          .join("")
+                      : `<div class="hint">${t("common.dash")}</div>`
+                  }
+                </div>
+              </div>
+            </section>`;
+                })
+                .join("")
+            : `<section class="panel"><div class="panel-body"><div class="empty-models"><strong>${t("models.empty")}</strong></div></div></section>`
+        }
       </div>
     </div>
   `;
@@ -930,67 +925,75 @@ function bindModelsEvents() {
     await loadModelGroups();
     render();
   });
-  document.querySelectorAll("tr[data-route]").forEach((row) => {
-    const rid = row.dataset.route;
-    const routesInGroup = () => {
+
+  // enable / disable
+  document.querySelectorAll(".route-row [data-act='route-toggle']").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const row = btn.closest(".route-row");
+      const rid = row?.dataset.route;
+      if (!rid) return;
       const gid = row.dataset.group;
       const g = modelGroups.find((x) => x.id === gid);
-      return (g?.routes || g?.Routes || []).slice().sort((a, b) => (a.priority ?? a.Priority ?? 0) - (b.priority ?? b.Priority ?? 0));
-    };
-    row.querySelector('[data-act="prio-up"]')?.addEventListener("click", async () => {
-      const list = routesInGroup();
-      const idx = list.findIndex((x) => (x.id || x.ID) === rid);
-      if (idx <= 0) return;
-      const cur = list[idx];
-      const prev = list[idx - 1];
-      const cp = cur.priority ?? cur.Priority ?? 10;
-      const pp = prev.priority ?? prev.Priority ?? 0;
-      modelsBusy = rid;
-      try {
-        await SetModelGroupRoutePriority(rid, pp);
-        await SetModelGroupRoutePriority(prev.id || prev.ID, cp);
-        await loadModelGroups();
-      } catch (e) {
-        toast(errMsg(e), "err");
-      } finally {
-        modelsBusy = "";
-        render();
-      }
-    });
-    row.querySelector('[data-act="prio-down"]')?.addEventListener("click", async () => {
-      const list = routesInGroup();
-      const idx = list.findIndex((x) => (x.id || x.ID) === rid);
-      if (idx < 0 || idx >= list.length - 1) return;
-      const cur = list[idx];
-      const next = list[idx + 1];
-      const cp = cur.priority ?? cur.Priority ?? 10;
-      const np = next.priority ?? next.Priority ?? 20;
-      modelsBusy = rid;
-      try {
-        await SetModelGroupRoutePriority(rid, np);
-        await SetModelGroupRoutePriority(next.id || next.ID, cp);
-        await loadModelGroups();
-      } catch (e) {
-        toast(errMsg(e), "err");
-      } finally {
-        modelsBusy = "";
-        render();
-      }
-    });
-    row.querySelector('[data-act="route-toggle"]')?.addEventListener("click", async () => {
-      const list = routesInGroup();
+      const list = g?.routes || g?.Routes || [];
       const cur = list.find((x) => (x.id || x.ID) === rid);
       const en = !!(cur?.enabled ?? cur?.Enabled);
       modelsBusy = rid;
       try {
         await SetModelGroupRouteEnabled(rid, !en);
         await loadModelGroups();
-      } catch (e) {
-        toast(errMsg(e), "err");
+      } catch (err) {
+        toast(errMsg(err), "err");
       } finally {
         modelsBusy = "";
         render();
       }
+    });
+  });
+
+  // drag-and-drop reorder within a group
+  document.querySelectorAll(".route-list").forEach((listEl) => {
+    let dragEl = null;
+    listEl.querySelectorAll(".route-row").forEach((row) => {
+      row.addEventListener("dragstart", (e) => {
+        dragEl = row;
+        row.classList.add("dragging");
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", row.dataset.route || "");
+      });
+      row.addEventListener("dragend", () => {
+        row.classList.remove("dragging");
+        listEl.querySelectorAll(".route-row").forEach((r) => r.classList.remove("drag-over"));
+        dragEl = null;
+      });
+      row.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        if (!dragEl || dragEl === row) return;
+        const rect = row.getBoundingClientRect();
+        const before = e.clientY < rect.top + rect.height / 2;
+        listEl.querySelectorAll(".route-row").forEach((r) => r.classList.remove("drag-over"));
+        row.classList.add("drag-over");
+        if (before) listEl.insertBefore(dragEl, row);
+        else listEl.insertBefore(dragEl, row.nextSibling);
+      });
+      row.addEventListener("drop", async (e) => {
+        e.preventDefault();
+        const gid = listEl.dataset.group;
+        const ids = [...listEl.querySelectorAll(".route-row")].map((r) => r.dataset.route).filter(Boolean);
+        if (!gid || !ids.length || typeof ReorderModelGroupRoutes !== "function") return;
+        modelsBusy = "reorder";
+        try {
+          await ReorderModelGroupRoutes(gid, ids);
+          await loadModelGroups();
+          toast(t("models.reordered"));
+        } catch (err) {
+          toast(errMsg(err), "err");
+        } finally {
+          modelsBusy = "";
+          render();
+        }
+      });
     });
   });
 }

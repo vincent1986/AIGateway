@@ -46,6 +46,8 @@ export function PickToolConfig(arg1:string):Promise<main.ToolConfigStatus>;
 
 export function ReadConfigText(arg1:string):Promise<string>;
 
+export function ReorderModelGroupRoutes(arg1:string,arg2:Array<string>):Promise<void>;
+
 export function RestoreCodexOriginalBases():Promise<main.ToolConfigStatus>;
 
 export function RestoreDefaultConfig(arg1:string):Promise<main.ToolConfigStatus>;
