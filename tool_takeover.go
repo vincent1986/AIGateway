@@ -128,8 +128,14 @@ func injectGatewayCodex(content, gatewayBase string) (string, error) {
 		content = "# AIGateway managed\n"
 	}
 	content = removeTomlProviderBlock(content, "codex_proxy")
-	content = upsertCodexModelProvider(content, gatewayProviderID, "AIGateway", gatewayBase, "")
+	// Local gateway usually has no auth — use inline api_key so Codex does not
+	// require a missing system env (Missing environment variable: aigateway_api_key).
+	const localKey = "aigateway"
+	content = upsertCodexModelProvider(content, gatewayProviderID, "AIGateway", gatewayBase, localKey)
 	content = setProviderField(content, gatewayProviderID, "base_url", gatewayBase)
+	content = setProviderField(content, gatewayProviderID, "api_key", localKey)
+	// Drop env_key so Codex won't look for unset AIGATEWAY env vars
+	content = removeProviderField(content, gatewayProviderID, "env_key")
 	content = setTomlTopLevelString(content, "model_provider", gatewayProviderID)
 	return content, nil
 }

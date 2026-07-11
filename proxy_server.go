@@ -1016,13 +1016,39 @@ func setProviderField(content, providerID, field, value string) string {
 		order = append(order, field)
 	}
 	kv[field] = value
-	// rebuild block
+	return content[:loc[0]] + rebuildProviderBlock(providerID, kv, order) + content[end:]
+}
+
+// removeProviderField drops a key from [model_providers.<id>] if present.
+func removeProviderField(content, providerID, field string) string {
+	reHeader := regexp.MustCompile(`(?m)^\[model_providers\.` + regexp.QuoteMeta(providerID) + `\]\s*$`)
+	loc := reHeader.FindStringIndex(content)
+	if loc == nil {
+		return content
+	}
+	end := findTomlTableEnd(content, loc[1])
+	block := content[loc[0]:end]
+	kv, order := parseProviderKV(block)
+	if _, ok := kv[field]; !ok {
+		return content
+	}
+	delete(kv, field)
+	var order2 []string
+	for _, k := range order {
+		if k != field {
+			order2 = append(order2, k)
+		}
+	}
+	return content[:loc[0]] + rebuildProviderBlock(providerID, kv, order2) + content[end:]
+}
+
+func rebuildProviderBlock(providerID string, kv map[string]string, order []string) string {
 	var lines []string
 	lines = append(lines, "[model_providers."+providerID+"]")
 	preferred := []string{"name", "base_url", "env_key", "api_key", "requires_openai_auth", "provider"}
 	seen := map[string]bool{}
 	for _, k := range preferred {
-		if v, ok := kv[k]; ok {
+		if v, ok := kv[k]; ok && v != "" {
 			lines = append(lines, k+` = "`+escapeTomlString(v)+`"`)
 			seen[k] = true
 		}
@@ -1035,8 +1061,7 @@ func setProviderField(content, providerID, field, value string) string {
 			lines = append(lines, k+` = "`+escapeTomlString(v)+`"`)
 		}
 	}
-	newBlock := strings.Join(lines, "\n") + "\n"
-	return content[:loc[0]] + newBlock + content[end:]
+	return strings.Join(lines, "\n") + "\n"
 }
 
 func firstRealProviderID(content string) string {
