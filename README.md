@@ -99,4 +99,4 @@ wails build -platform linux/amd64   # Linux 主机 / CI
 
 ## License
 
-See repository for license terms.
+[MIT](LICENSE) © 2026 AIGateway contributors
