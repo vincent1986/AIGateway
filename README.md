@@ -31,7 +31,8 @@
 - **SQLite 网关**：虚拟模型组、优先级 Failover、用量统计  
 - **一键接管**：ChatGPT / Claude Code / OpenClaw / Harness  
 - **预设库**：点选厂家，云端多数只需 API Key  
-- **多语言（弹窗）**：简中 / 繁中 / 英 / 日 / 韩 / 德 / 越 / 泰  
+- **多语言（弹窗）**：默认 **English**，可切换 **繁體中文** / **日本語**  
+
 - **跨平台**：macOS / Windows / Linux  
 
 ## Download
