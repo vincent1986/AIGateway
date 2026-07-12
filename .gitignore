@@ -1,0 +1,17 @@
+.DS_Store
+*.log
+.env
+.env.*
+!.env.example
+
+node_modules/
+frontend/node_modules/
+frontend/dist/
+# Separate Cloudflare project; it is not part of this repository.
+ai-switch-site/
+
+build/bin/
+*.app/
+*.dmg
+*.exe
+*.tmp

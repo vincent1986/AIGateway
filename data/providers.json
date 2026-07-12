@@ -1,0 +1,81 @@
+[
+  {
+    "id": "openai",
+    "name": "OpenAI",
+    "baseUrl": "https://api.openai.com/v1",
+    "apiFormat": "openai_responses",
+    "color": "#3d8bfd",
+    "apiKeyUrl": "https://platform.openai.com/api-keys",
+    "endpointCandidates": ["https://api.openai.com/v1"],
+    "authHeaders": ["Authorization"],
+    "models": [
+      {"id": "gpt-5", "name": "GPT-5", "enabled": true, "isDefault": true, "contextWindow": 400000, "toolCapabilities": ["function_call", "web_search", "image_input"]}
+    ]
+  },
+  {
+    "id": "anthropic",
+    "name": "Anthropic",
+    "baseUrl": "https://api.anthropic.com",
+    "apiFormat": "anthropic_messages",
+    "color": "#d29922",
+    "apiKeyUrl": "https://console.anthropic.com/settings/keys",
+    "endpointCandidates": ["https://api.anthropic.com"],
+    "authHeaders": ["x-api-key"],
+    "models": [
+      {"id": "claude-sonnet-5", "name": "Claude Sonnet 5", "enabled": true, "isDefault": true, "contextWindow": 200000, "toolCapabilities": ["tool_use"]}
+    ]
+  },
+  {
+    "id": "deepseek",
+    "name": "DeepSeek",
+    "baseUrl": "https://api.deepseek.com/v1",
+    "apiFormat": "openai_chat",
+    "color": "#3fb950",
+    "apiKeyUrl": "https://platform.deepseek.com/api_keys",
+    "endpointCandidates": ["https://api.deepseek.com/v1"],
+    "authHeaders": ["Authorization"],
+    "models": [
+      {"id": "deepseek-chat", "name": "DeepSeek Chat", "enabled": true, "isDefault": true, "contextWindow": 64000, "toolCapabilities": ["function_call"]},
+      {"id": "deepseek-reasoner", "name": "DeepSeek Reasoner", "enabled": true, "contextWindow": 64000, "toolCapabilities": ["function_call"]}
+    ]
+  },
+  {
+    "id": "qwen",
+    "name": "通义千问",
+    "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "apiFormat": "openai_chat",
+    "color": "#7c5cff",
+    "apiKeyUrl": "https://bailian.console.aliyun.com/",
+    "endpointCandidates": ["https://dashscope.aliyuncs.com/compatible-mode/v1"],
+    "authHeaders": ["Authorization"],
+    "models": [
+      {"id": "qwen3-coder-plus", "name": "Qwen3 Coder Plus", "enabled": true, "isDefault": true, "contextWindow": 262144, "toolCapabilities": ["function_call"]}
+    ]
+  },
+  {
+    "id": "moonshot",
+    "name": "Moonshot / Kimi",
+    "baseUrl": "https://api.moonshot.cn/v1",
+    "apiFormat": "openai_chat",
+    "color": "#39c5cf",
+    "apiKeyUrl": "https://platform.kimi.com/console/api-keys",
+    "endpointCandidates": ["https://api.moonshot.cn/v1"],
+    "authHeaders": ["Authorization"],
+    "models": [
+      {"id": "kimi-k2", "name": "Kimi K2", "enabled": true, "isDefault": true, "contextWindow": 128000, "toolCapabilities": ["function_call"]}
+    ]
+  },
+  {
+    "id": "minimax",
+    "name": "MiniMax",
+    "baseUrl": "https://api.minimax.chat/v1",
+    "apiFormat": "openai_responses",
+    "color": "#e85d9a",
+    "apiKeyUrl": "https://platform.minimaxi.com/",
+    "endpointCandidates": ["https://api.minimax.chat/v1", "https://api.minimaxi.com/v1"],
+    "authHeaders": ["Authorization"],
+    "models": [
+      {"id": "MiniMax-M3", "name": "MiniMax M3", "enabled": true, "isDefault": true, "contextWindow": 1000000, "toolCapabilities": ["function_call"]}
+    ]
+  }
+]
