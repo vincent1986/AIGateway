@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 常见问题 FAQ / Wiki
+    url: https://github.com/vincent1986/AIGateway/wiki/FAQ
+    about: 安装、网关、厂家、接管、排错 · Installation, gateway, providers, takeover, troubleshooting
+  - name: 下载最新版本 / Download latest release
+    url: https://github.com/vincent1986/AIGateway/releases
+    about: 安装包与更新说明 · Installers and release notes
+  - name: 使用说明 / README
+    url: https://github.com/vincent1986/AIGateway#readme
+    about: 功能介绍与快速上手 · Features and getting started
