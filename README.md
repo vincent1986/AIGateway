@@ -40,6 +40,8 @@
 
 [Download latest release](https://github.com/vincent1986/AIGateway/releases)
 
+**Docs:** [FAQ](docs/wiki/FAQ.md) · [Getting Started](docs/wiki/Getting-Started.md) · [Troubleshooting](docs/wiki/Troubleshooting.md) · [Wiki](https://github.com/vincent1986/AIGateway/wiki)
+
 ---
 
 ## 中文
@@ -73,6 +75,8 @@
 - **跨平台**：macOS、Windows、Linux  
 
 [下载最新版本](https://github.com/vincent1986/AIGateway/releases)
+
+**文档：** [常见问题 FAQ](docs/wiki/FAQ.md) · [快速开始](docs/wiki/Getting-Started.md) · [故障排除](docs/wiki/Troubleshooting.md) · [Wiki](https://github.com/vincent1986/AIGateway/wiki)
 
 ---
 
