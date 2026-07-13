@@ -1,0 +1,2 @@
+62fb9055926782cb01feac23d7bef6115d69f7c96d45532f0d02184df8ad26a7  dist/release/v2.0.1/AIGateway-v2.0.1-macos-arm64.zip
+208ef23df64656c1a0c191f06154727bde00e6190ec8bfe8713b0c31ea7e82d9  dist/release/v2.0.1/AIGateway-v2.0.1-macos-amd64.zip

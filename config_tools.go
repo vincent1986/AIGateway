@@ -13,62 +13,70 @@ import (
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
+// ToolKind identifies a target CLI product.
 type ToolKind string
 
 const (
-	ToolCodex         ToolKind = "codex"
-	ToolClaude        ToolKind = "claude"
-	ToolClaudeDesktop ToolKind = "claude_desktop"
-	ToolGemini        ToolKind = "gemini"
-	ToolOpenCode      ToolKind = "opencode"
-	ToolOpenClaw      ToolKind = "openclaw"
-	ToolHermes        ToolKind = "hermes"
+	ToolCodex    ToolKind = "codex" // ChatGPT / Codex config paths
+	ToolClaude   ToolKind = "claude"
+	ToolOpenClaw ToolKind = "openclaw"
+	ToolHarness  ToolKind = "harness"
 )
 
-type ToolConfigSpec struct {
-	Kind        ToolKind `json:"kind"`
-	Name        string   `json:"name"`
-	ConfigStyle string   `json:"configStyle"`
-}
-
+// ModelOption is a model entry discovered from a tool config.
 type ModelOption struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
 	Provider string `json:"provider"`
 }
 
+// ToolConfigStatus describes discovery and current model state.
 type ToolConfigStatus struct {
-	Kind                string        `json:"kind"`
-	Name                string        `json:"name"`
-	Path                string        `json:"path"`
-	Found               bool          `json:"found"`
-	Exists              bool          `json:"exists"`
-	Model               string        `json:"model"`
-	ModelProvider       string        `json:"modelProvider"`
-	SearchPaths         []string      `json:"searchPaths"`
-	Candidates          []ModelOption `json:"candidates"`
-	Source              string        `json:"source"`
-	Message             string        `json:"message"`
-	OS                  string        `json:"os"`
-	HasDefaultBackup    bool          `json:"hasDefaultBackup"`
-	DefaultBackupPath   string        `json:"defaultBackupPath"`
-	DefaultBackupAt     string        `json:"defaultBackupAt"`
-	DefaultBackupOrigin string        `json:"defaultBackupOrigin"`
+	Kind                 string        `json:"kind"`
+	Name                 string        `json:"name"`
+	Path                 string        `json:"path"`
+	Found                bool          `json:"found"`
+	Exists               bool          `json:"exists"`
+	Model                string        `json:"model"`
+	ModelProvider        string        `json:"modelProvider"`
+	ProxyModel           string        `json:"proxyModel"`
+	ProxyTargetModel     string        `json:"proxyTargetModel"`
+	SearchPaths          []string      `json:"searchPaths"`
+	Candidates           []ModelOption `json:"candidates"`
+	Source               string        `json:"source"` // auto | manual | override
+	Message              string        `json:"message"`
+	OS                   string        `json:"os"` // darwin | windows | linux
+	Managed              bool          `json:"managed"`
+	HasDefaultBackup     bool          `json:"hasDefaultBackup"`
+	DefaultBackupPath    string        `json:"defaultBackupPath"`
+	DefaultBackupAt      string        `json:"defaultBackupAt"`
+	DefaultBackupOrigin  string        `json:"defaultBackupOrigin"`
+	HasTakeoverBackup    bool          `json:"hasTakeoverBackup"`
+	TakeoverBackupPath   string        `json:"takeoverBackupPath"`
+	TakeoverBackupAt     string        `json:"takeoverBackupAt"`
+	TakeoverBackupOrigin string        `json:"takeoverBackupOrigin"`
 }
 
 type pathOverrides struct {
-	Codex         string `json:"codex"`
-	Claude        string `json:"claude"`
-	ClaudeDesktop string `json:"claudeDesktop"`
-	Gemini        string `json:"gemini"`
-	OpenCode      string `json:"opencode"`
-	OpenClaw      string `json:"openclaw"`
-	Hermes        string `json:"hermes"`
+	Codex    string `json:"codex"`
+	Claude   string `json:"claude"`
+	OpenClaw string `json:"openclaw"`
+	Harness  string `json:"harness"`
+}
+
+func normalizeToolKind(kind string) ToolKind {
+	raw := strings.ToLower(strings.TrimSpace(kind))
+	if raw == "chatgpt" {
+		return ToolCodex
+	}
+	return ToolKind(raw)
 }
 
 func (a *App) overridesPath() string {
-	return filepath.Join(managerRoot(), "paths.json")
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".codex-manager", "paths.json")
 }
+
 func (a *App) loadOverrides() pathOverrides {
 	var o pathOverrides
 	b, err := os.ReadFile(a.overridesPath())
@@ -78,234 +86,269 @@ func (a *App) loadOverrides() pathOverrides {
 	_ = json.Unmarshal(b, &o)
 	return o
 }
+
 func (a *App) saveOverrides(o pathOverrides) error {
-	_ = os.MkdirAll(managerRoot(), 0o755)
-	b, _ := json.MarshalIndent(o, "", "  ")
-	return writeFileAtomic(a.overridesPath(), string(b))
+	dir := filepath.Dir(a.overridesPath())
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	b, err := json.MarshalIndent(o, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(a.overridesPath(), b, 0o644)
 }
 
-func codexSearchPaths() []string {
-	var paths []string
-	if v := os.Getenv("CODEX_HOME"); v != "" {
-		paths = append(paths, filepath.Join(expandPath(v), "config.toml"))
-	}
-	if h := userHome(); h != "" {
-		paths = append(paths, filepath.Join(h, ".codex", "config.toml"))
-	}
-	return paths
-}
-func claudeSearchPaths() []string {
-	var paths []string
-	if v := os.Getenv("CLAUDE_CONFIG_DIR"); v != "" {
-		paths = append(paths, filepath.Join(expandPath(v), "settings.json"))
-	}
-	if h := userHome(); h != "" {
-		paths = append(paths, filepath.Join(h, ".claude", "settings.json"), filepath.Join(h, ".claude.json"))
-	}
-	return paths
+func fileExists(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && !st.IsDir()
 }
 
-func toolConfigSpecs() []ToolConfigSpec {
-	return []ToolConfigSpec{
-		{Kind: ToolCodex, Name: "Codex", ConfigStyle: "toml"},
-		{Kind: ToolClaude, Name: "Claude Code", ConfigStyle: "json"},
-		{Kind: ToolClaudeDesktop, Name: "Claude Desktop", ConfigStyle: "json"},
-		{Kind: ToolGemini, Name: "Gemini CLI", ConfigStyle: "json_or_env"},
-		{Kind: ToolOpenCode, Name: "OpenCode", ConfigStyle: "json"},
-		{Kind: ToolOpenClaw, Name: "OpenClaw", ConfigStyle: "json5"},
-		{Kind: ToolHermes, Name: "Hermes Agent", ConfigStyle: "yaml_or_json"},
-	}
-}
-
-func toolSpec(kind ToolKind) (ToolConfigSpec, bool) {
-	for _, spec := range toolConfigSpecs() {
-		if spec.Kind == kind {
-			return spec, true
+func firstExisting(paths []string) string {
+	for _, p := range paths {
+		if fileExists(p) {
+			return p
 		}
 	}
-	return ToolConfigSpec{}, false
+	return ""
 }
 
-func (a *App) ListToolConfigSpecs() []ToolConfigSpec {
-	return toolConfigSpecs()
-}
-
-func genericToolSearchPaths(kind ToolKind) []string {
-	home := userHome()
-	if home == "" {
-		return nil
-	}
-	switch kind {
-	case ToolClaudeDesktop:
-		return []string{filepath.Join(home, "Library", "Application Support", "Claude-3p", "claude_desktop_config.json"), filepath.Join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json")}
-	case ToolGemini:
-		return []string{filepath.Join(home, ".gemini", "settings.json"), filepath.Join(home, ".gemini", ".env")}
-	case ToolOpenCode:
-		return []string{filepath.Join(home, ".config", "opencode", "opencode.json"), filepath.Join(home, ".opencode", "opencode.json"), filepath.Join(home, ".opencode", "config.json")}
-	case ToolOpenClaw:
-		return []string{filepath.Join(home, ".openclaw", "openclaw.json"), filepath.Join(home, ".openclaw", "config.json")}
-	case ToolHermes:
-		return []string{filepath.Join(home, ".hermes", "config.yaml"), filepath.Join(home, ".hermes", "config.json"), filepath.Join(home, ".config", "hermes", "config.yaml")}
-	default:
-		return nil
-	}
-}
-
+// DiscoverToolConfigs auto-searches registered tool config files.
 func (a *App) DiscoverToolConfigs() []ToolConfigStatus {
-	out := make([]ToolConfigStatus, 0, len(toolConfigSpecs()))
-	for _, spec := range toolConfigSpecs() {
-		out = append(out, a.resolveTool(spec.Kind))
+	out := make([]ToolConfigStatus, 0, len(toolRegistry))
+	for _, d := range toolRegistry {
+		out = append(out, a.resolveTool(toolKindFromDriverID(d.ToolID())))
 	}
 	return out
 }
+
+// GetToolConfig returns status for one tool kind: "codex" | "claude".
 func (a *App) GetToolConfig(kind string) ToolConfigStatus {
-	return a.resolveTool(ToolKind(strings.ToLower(kind)))
+	return a.resolveTool(normalizeToolKind(kind))
 }
 
 func (a *App) resolveTool(kind ToolKind) ToolConfigStatus {
 	st := ToolConfigStatus{Kind: string(kind), OS: goruntime.GOOS}
-	switch kind {
-	case ToolCodex:
-		st.Name, st.SearchPaths = "Codex", codexSearchPaths()
-	case ToolClaude:
-		st.Name, st.SearchPaths = "Claude Code", claudeSearchPaths()
-	default:
-		if spec, ok := toolSpec(kind); ok {
-			st.Name, st.SearchPaths = spec.Name, genericToolSearchPaths(kind)
-		} else {
-			st.Message = "未知工具"
+	// Map kind → driver (codex stored as kind "codex" for compat)
+	driverID := string(kind)
+	if kind == ToolCodex {
+		driverID = "chatgpt"
+	}
+	d := driverByID(driverID)
+	if d == nil {
+		// fallback legacy
+		switch kind {
+		case ToolCodex:
+			st.Name = "ChatGPT"
+			st.SearchPaths = codexSearchPaths()
+		case ToolClaude:
+			st.Name = "Claude Code"
+			st.SearchPaths = claudeSearchPaths()
+		default:
+			st.Message = "未知工具类型"
 			return st
 		}
+	} else {
+		st.Name = d.ToolName()
+		st.SearchPaths = d.DefaultPaths()
+		// expose kind for UI: keep codex/claude/openclaw/harness
+		if kind == ToolCodex {
+			st.Kind = "codex"
+		}
 	}
+
 	ov := a.loadOverrides()
 	override := ""
 	switch kind {
 	case ToolCodex:
-		override = ov.Codex
+		override = strings.TrimSpace(ov.Codex)
 	case ToolClaude:
-		override = ov.Claude
-	case ToolClaudeDesktop:
-		override = ov.ClaudeDesktop
-	case ToolGemini:
-		override = ov.Gemini
-	case ToolOpenCode:
-		override = ov.OpenCode
+		override = strings.TrimSpace(ov.Claude)
 	case ToolOpenClaw:
-		override = ov.OpenClaw
-	case ToolHermes:
-		override = ov.Hermes
+		override = strings.TrimSpace(ov.OpenClaw)
+	case ToolHarness:
+		override = strings.TrimSpace(ov.Harness)
 	}
+
 	if override != "" {
 		st.Path = expandPath(override)
 		st.Source = "override"
-		if fileExists(st.Path) {
-			st.Found, st.Exists = true, true
+		if d != nil {
+			if detected, err := d.DetectConfig(st.Path); err != nil {
+				st.Message = "手动路径检测失败: " + err.Error()
+			} else if detected.Exists {
+				st.Found = true
+				st.Exists = true
+				a.fillFromFile(&st)
+				fillManagedInfo(&st, d)
+				fillProxyModelInfo(&st)
+				fillBackupInfo(&st)
+				st.Message = "使用手动指定路径"
+				return st
+			}
+		} else if fileExists(st.Path) {
+			st.Found = true
+			st.Exists = true
 			a.fillFromFile(&st)
-			st.Message = "使用手动路径"
+			fillManagedInfo(&st, d)
+			fillProxyModelInfo(&st)
+			fillBackupInfo(&st)
+			st.Message = "使用手动指定路径"
 			return st
 		}
-		st.Message = "手动路径不存在"
+		st.Exists = false
+		st.Found = false
+		st.Message = "手动路径不存在，已回退自动搜索"
 	}
-	for _, p := range st.SearchPaths {
-		if fileExists(p) {
-			st.Path, st.Found, st.Exists, st.Source = p, true, true, "auto"
+
+	found := firstExisting(st.SearchPaths)
+	if found != "" {
+		st.Path = found
+		if d != nil {
+			if detected, err := d.DetectConfig(st.Path); err != nil {
+				st.Message = "自动路径检测失败: " + err.Error()
+			} else if detected.Exists {
+				st.Found = true
+				st.Exists = true
+				st.Source = "auto"
+				a.fillFromFile(&st)
+				fillManagedInfo(&st, d)
+				fillProxyModelInfo(&st)
+				fillBackupInfo(&st)
+				st.Message = "自动搜索成功"
+				return st
+			}
+		} else {
+			st.Found = true
+			st.Exists = true
+			st.Source = "auto"
 			a.fillFromFile(&st)
+			fillManagedInfo(&st, d)
+			fillProxyModelInfo(&st)
+			fillBackupInfo(&st)
 			st.Message = "自动搜索成功"
 			return st
 		}
 	}
-	if len(st.SearchPaths) > 0 {
-		st.Path = st.SearchPaths[0]
+
+	// default preferred path even if missing (OS-correct)
+	if d != nil {
+		st.Path = d.PreferredPath()
+	} else {
+		switch kind {
+		case ToolCodex:
+			st.Path = preferredCodexConfigPath()
+		case ToolClaude:
+			st.Path = preferredClaudeConfigPath()
+		default:
+			if len(st.SearchPaths) > 0 {
+				st.Path = st.SearchPaths[0]
+			}
+		}
 	}
-	st.Message = "未找到配置文件"
+	st.Found = false
+	st.Exists = false
+	st.Source = "auto"
+	st.Message = "未找到配置文件，请手动选择"
+	fillProxyModelInfo(&st)
+	fillBackupInfo(&st)
 	return st
+}
+
+func fillProxyModelInfo(st *ToolConfigStatus) {
+	if st == nil {
+		return
+	}
+	k := ToolKind(st.Kind)
+	if !isKnownToolKind(k) {
+		return
+	}
+	alias := appProxyModel(k)
+	st.ProxyModel = alias
+	st.ProxyTargetModel = loadProxyAlias(alias)
+}
+
+func fillManagedInfo(st *ToolConfigStatus, d ToolDriver) {
+	if st == nil || !st.Exists || st.Path == "" {
+		return
+	}
+	if d != nil {
+		st.Managed = d.IsManaged(st.Path)
+		return
+	}
+	switch ToolKind(st.Kind) {
+	case ToolCodex:
+		st.Managed = strings.EqualFold(st.ModelProvider, gatewayProviderID) || strings.EqualFold(st.ModelProvider, "codex_proxy")
+	case ToolClaude:
+		st.Managed = fileContainsAny(st.Path, "127.0.0.1:18080", "aigateway")
+	}
 }
 
 func (a *App) fillFromFile(st *ToolConfigStatus) {
 	b, err := os.ReadFile(st.Path)
 	if err != nil {
-		st.Message = err.Error()
+		st.Message = "读取失败: " + err.Error()
 		return
 	}
-	content := string(b)
-	if readManagedToolStatus(st, content) {
-		return
+	driverID := st.Kind
+	if ToolKind(st.Kind) == ToolCodex {
+		driverID = "chatgpt"
 	}
-	switch ToolKind(st.Kind) {
-	case ToolCodex:
-		st.Model = readTomlTopLevelString(content, "model")
-		st.ModelProvider = readTomlTopLevelString(content, "model_provider")
-		st.Candidates = parseCodexModels(content)
-	case ToolGemini:
-		if strings.HasSuffix(strings.ToLower(st.Path), ".env") {
-			st.Model = readEnvValue(content, "GEMINI_MODEL")
-			st.ModelProvider = readEnvValue(content, "GOOGLE_GEMINI_BASE_URL")
-			if st.ModelProvider == "" {
-				st.ModelProvider = readEnvValue(content, "GEMINI_API_BASE")
-			}
+	if d := driverByID(driverID); d != nil {
+		view, err := d.InspectConfig(b, st.Path)
+		if err != nil {
+			st.Message = "配置解析失败: " + err.Error()
 			return
 		}
-		fillFromLooseJSON(st, content)
-	case ToolOpenClaw:
-		fillFromLooseJSON(st, stripJSON5(content))
-	case ToolHermes:
-		if strings.HasSuffix(strings.ToLower(st.Path), ".yaml") || strings.HasSuffix(strings.ToLower(st.Path), ".yml") {
-			st.Model = readYAMLScalar(content, "model")
-			st.ModelProvider = readYAMLScalar(content, "base_url")
-			return
-		}
-		fillFromLooseJSON(st, content)
-	default:
-		fillFromLooseJSON(st, content)
+		st.Model = view.Model
+		st.ModelProvider = view.ModelProvider
+		st.Candidates = view.Candidates
 	}
 }
 
-func fillFromLooseJSON(st *ToolConfigStatus, content string) {
-	var raw map[string]any
-	if json.Unmarshal([]byte(content), &raw) == nil {
-		if v, ok := raw["model"].(string); ok {
-			st.Model = v
-		}
-		if env, ok := raw["env"].(map[string]any); ok {
-			if v, ok := env["ANTHROPIC_BASE_URL"].(string); ok {
-				st.ModelProvider = v
-			}
-		}
+// validateToolConfigWrite re-reads the target using the same application
+// adapter used for discovery. A successful file write is not sufficient when
+// a tool ignores the field because it was written at the wrong schema level.
+func validateToolConfigWrite(kind ToolKind, path, expectedModel string) error {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("写入后读取配置失败: %w", err)
 	}
+	return validateToolConfigContent(kind, path, string(b), expectedModel)
 }
 
-func readEnvValue(content, key string) string {
-	re := regexp.MustCompile(`(?m)^\s*(?:export\s+)?` + regexp.QuoteMeta(key) + `\s*=\s*["']?([^"'\r\n#]*)`)
-	if m := re.FindStringSubmatch(content); len(m) == 2 {
-		return strings.TrimSpace(m[1])
+func validateToolConfigContent(kind ToolKind, path, content, expectedModel string) error {
+	driverID := string(kind)
+	if kind == ToolCodex {
+		driverID = "chatgpt"
 	}
-	return ""
-}
-
-func readYAMLScalar(content, key string) string {
-	re := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(key) + `\s*:\s*["']?([^"'\r\n#]+)`)
-	if m := re.FindStringSubmatch(content); len(m) == 2 {
-		return strings.TrimSpace(m[1])
+	d := driverByID(driverID)
+	if d == nil {
+		return fmt.Errorf("未知工具类型: %s", kind)
 	}
-	return ""
-}
-
-func stripJSON5(content string) string {
-	blockComments := regexp.MustCompile(`(?s)/\*.*?\*/`)
-	lineComments := regexp.MustCompile(`(?m)^\s*//.*$`)
-	trailingCommas := regexp.MustCompile(`,\s*([}\]])`)
-	content = blockComments.ReplaceAllString(content, "")
-	content = lineComments.ReplaceAllString(content, "")
-	return trailingCommas.ReplaceAllString(content, "$1")
+	return d.ValidateConfigContent([]byte(content), path, ExpectedConfig{
+		Model:        expectedModel,
+		RequireModel: true,
+	})
 }
 
 func readTomlTopLevelString(content, key string) string {
+	// Only match keys before the first table header, or any top-level assignment
+	// Prefer first non-comment assignment of key at beginning of line.
 	re := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(key) + `\s*=\s*"([^"]*)"`)
+	// Walk line by line and skip those inside tables by simple heuristic:
+	// track if we're past a [[models]] etc — still allow global model which is usually near top.
+	// For reliability: take the first match that is not under an indented section after [[models]].
 	lines := strings.Split(content, "\n")
 	inTable := false
 	for _, line := range lines {
 		trim := strings.TrimSpace(line)
+		if trim == "" || strings.HasPrefix(trim, "#") {
+			continue
+		}
 		if strings.HasPrefix(trim, "[") {
+			// top-level model should be before any table; once in table, only allow non-array tables?
+			// model_provider/model are global — stop at first [table]
 			inTable = true
 			continue
 		}
@@ -316,6 +359,7 @@ func readTomlTopLevelString(content, key string) string {
 			return m[1]
 		}
 	}
+	// fallback: first occurrence in whole file for model only if not found
 	if m := re.FindStringSubmatch(content); len(m) == 2 {
 		return m[1]
 	}
@@ -326,8 +370,10 @@ func setTomlTopLevelString(content, key, value string) string {
 	re := regexp.MustCompile(`(?m)^(\s*)` + regexp.QuoteMeta(key) + `\s*=\s*"[^"]*"`)
 	lines := strings.Split(content, "\n")
 	inTable := false
+	replaced := false
 	for i, line := range lines {
-		if strings.HasPrefix(strings.TrimSpace(line), "[") {
+		trim := strings.TrimSpace(line)
+		if strings.HasPrefix(trim, "[") {
 			inTable = true
 		}
 		if inTable {
@@ -335,24 +381,55 @@ func setTomlTopLevelString(content, key, value string) string {
 		}
 		if re.MatchString(line) {
 			lines[i] = re.ReplaceAllString(line, `${1}`+key+` = "`+escapeTomlString(value)+`"`)
-			return strings.Join(lines, "\n")
+			replaced = true
+			break
 		}
 	}
+	if replaced {
+		return strings.Join(lines, "\n")
+	}
+	// insert near top after any leading comments
 	insert := key + ` = "` + escapeTomlString(value) + `"`
-	return insert + "\n" + content
+	if strings.TrimSpace(content) == "" {
+		return insert + "\n"
+	}
+	// put after initial comment block
+	idx := 0
+	for idx < len(lines) {
+		t := strings.TrimSpace(lines[idx])
+		if t == "" || strings.HasPrefix(t, "#") {
+			idx++
+			continue
+		}
+		break
+	}
+	out := make([]string, 0, len(lines)+1)
+	out = append(out, lines[:idx]...)
+	out = append(out, insert)
+	out = append(out, lines[idx:]...)
+	return strings.Join(out, "\n")
 }
 
 func escapeTomlString(s string) string {
 	s = strings.ReplaceAll(s, `\`, `\\`)
-	return strings.ReplaceAll(s, `"`, `\"`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	return s
 }
 
 func parseCodexModels(content string) []ModelOption {
+	reName := regexp.MustCompile(`^\s*name\s*=\s*"([^"]*)"`)
+	reModel := regexp.MustCompile(`^\s*model\s*=\s*"([^"]*)"`)
+	reProv := regexp.MustCompile(`^\s*provider\s*=\s*"([^"]*)"`)
+
 	var out []ModelOption
 	lines := strings.Split(content, "\n")
-	in, name, model, prov := false, "", "", ""
+	inModels := false
+	var name, model, prov string
 	flush := func() {
-		if in && model != "" {
+		if !inModels {
+			return
+		}
+		if model != "" {
 			n := name
 			if n == "" {
 				n = model
@@ -361,28 +438,30 @@ func parseCodexModels(content string) []ModelOption {
 		}
 		name, model, prov = "", "", ""
 	}
+
 	for _, line := range lines {
 		trim := strings.TrimSpace(line)
 		if strings.HasPrefix(trim, "[") {
 			if trim == "[[models]]" {
 				flush()
-				in = true
+				inModels = true
 				continue
 			}
+			// leaving models section
 			flush()
-			in = false
+			inModels = false
 			continue
 		}
-		if !in {
+		if !inModels {
 			continue
 		}
-		if m := regexp.MustCompile(`^\s*model\s*=\s*"([^"]*)"`).FindStringSubmatch(line); len(m) == 2 {
+		if m := reModel.FindStringSubmatch(line); len(m) == 2 {
 			model = m[1]
 		}
-		if m := regexp.MustCompile(`^\s*name\s*=\s*"([^"]*)"`).FindStringSubmatch(line); len(m) == 2 {
+		if m := reName.FindStringSubmatch(line); len(m) == 2 {
 			name = m[1]
 		}
-		if m := regexp.MustCompile(`^\s*provider\s*=\s*"([^"]*)"`).FindStringSubmatch(line); len(m) == 2 {
+		if m := reProv.FindStringSubmatch(line); len(m) == 2 {
 			prov = m[1]
 		}
 	}
@@ -390,333 +469,270 @@ func parseCodexModels(content string) []ModelOption {
 	return out
 }
 
-func parseProviderKV(oldBlock string) (map[string]string, []string) {
-	kv := map[string]string{}
-	var order []string
-	for _, line := range strings.Split(oldBlock, "\n") {
-		trim := strings.TrimSpace(line)
-		if trim == "" || strings.HasPrefix(trim, "#") || strings.HasPrefix(trim, "[") {
-			continue
+func readClaudeModel(content, path string) (model, provider string) {
+	// settings.json or .claude.json
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(content), &raw); err != nil {
+		return "", ""
+	}
+	if v, ok := raw["model"].(string); ok {
+		model = v
+	}
+	// some setups put provider-ish env under env
+	if env, ok := raw["env"].(map[string]any); ok {
+		if v, ok := env["ANTHROPIC_MODEL"].(string); ok && model == "" {
+			model = v
 		}
-		if i := strings.Index(trim, "="); i > 0 {
-			k := strings.TrimSpace(trim[:i])
-			v := strings.Trim(strings.TrimSpace(trim[i+1:]), `"`)
-			if _, ok := kv[k]; !ok {
-				order = append(order, k)
-			}
-			kv[k] = v
+		if v, ok := env["ANTHROPIC_BASE_URL"].(string); ok {
+			provider = v
 		}
 	}
-	return kv, order
+	_ = path
+	return model, provider
 }
 
-func findTomlTableEnd(content string, from int) int {
-	i := from
-	for i < len(content) {
-		lineEnd := strings.IndexByte(content[i:], '\n')
-		if lineEnd < 0 {
-			line := content[i:]
-			if strings.HasPrefix(strings.TrimSpace(line), "[") {
-				return i
-			}
-			return len(content)
-		}
-		line := content[i : i+lineEnd]
-		if strings.HasPrefix(strings.TrimSpace(line), "[") {
-			return i
-		}
-		i += lineEnd + 1
+func readOpenClawModel(content string) (model, provider string) {
+	var raw map[string]any
+	if unmarshalOpenClawJSON5([]byte(content), &raw) != nil {
+		return "", ""
 	}
-	return len(content)
+	if agents, _ := raw["agents"].(map[string]any); agents != nil {
+		if defaults, _ := agents["defaults"].(map[string]any); defaults != nil {
+			if modelObj, _ := defaults["model"].(map[string]any); modelObj != nil {
+				if primary, _ := modelObj["primary"].(string); primary != "" {
+					if i := strings.Index(primary, "/"); i > 0 {
+						return primary[i+1:], primary[:i]
+					}
+					return primary, ""
+				}
+			}
+		}
+	}
+	return readGenericToolModel(content, "")
 }
 
+func readGenericToolModel(content, path string) (model, provider string) {
+	if strings.HasSuffix(strings.ToLower(path), ".yaml") || strings.HasSuffix(strings.ToLower(path), ".yml") {
+		for _, line := range strings.Split(content, "\n") {
+			if len(line) != len(strings.TrimLeft(line, " \t")) {
+				continue
+			}
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			key := strings.TrimSpace(parts[0])
+			value := strings.Trim(strings.TrimSpace(parts[1]), `" '`)
+			switch key {
+			case "model":
+				model = value
+			case "provider":
+				provider = value
+			}
+		}
+		return model, provider
+	}
+	var raw map[string]any
+	if json.Unmarshal([]byte(content), &raw) != nil {
+		return "", ""
+	}
+	if v, ok := raw["model"].(string); ok {
+		model = v
+	}
+	if model == "" {
+		if v, ok := raw["defaultModel"].(string); ok {
+			model = v
+		}
+	}
+	if v, ok := raw["provider"].(string); ok {
+		provider = v
+	}
+	return model, provider
+}
+
+func setClaudeModel(content, model string) (string, error) {
+	// minimal model-only switch; full base/key uses applyClaudeModelSwitch
+	return applyClaudeModelSwitch(content, model, "", "", "")
+}
+
+// PickToolConfig opens a file dialog to manually choose a config file.
 func (a *App) PickToolConfig(kind string) (ToolConfigStatus, error) {
-	k := ToolKind(strings.ToLower(kind))
-	home := userHome()
-	filters := []wailsruntime.FileFilter{{DisplayName: "All", Pattern: "*.*"}}
+	k := ToolKind(strings.ToLower(strings.TrimSpace(kind)))
 	title := "选择配置文件"
-	def := home
-	if k == ToolCodex {
-		title = "选择 Codex config.toml"
-		filters = []wailsruntime.FileFilter{{DisplayName: "TOML", Pattern: "*.toml"}}
-		def = filepath.Join(home, ".codex")
-	} else {
-		title = "选择 Claude settings.json"
-		filters = []wailsruntime.FileFilter{{DisplayName: "JSON", Pattern: "*.json"}}
-		def = filepath.Join(home, ".claude")
+	filters := []wailsruntime.FileFilter{}
+	defaultDir := defaultDirForKind(k)
+	home := userHome()
+
+	switch k {
+	case ToolCodex:
+		title = "选择 Codex 配置文件 (config.toml)"
+		// Windows dialog filters often need both display name and pattern
+		filters = []wailsruntime.FileFilter{
+			{DisplayName: "TOML (*.toml)", Pattern: "*.toml"},
+			{DisplayName: "All files (*.*)", Pattern: "*.*"},
+		}
+	case ToolClaude:
+		title = "选择 Claude Code 配置文件 (settings.json)"
+		filters = []wailsruntime.FileFilter{
+			{DisplayName: "JSON (*.json)", Pattern: "*.json"},
+			{DisplayName: "All files (*.*)", Pattern: "*.*"},
+		}
+	case ToolOpenClaw:
+		title = "选择 OpenClaw 配置文件"
+		filters = []wailsruntime.FileFilter{
+			{DisplayName: "JSON (*.json)", Pattern: "*.json"},
+			{DisplayName: "All files (*.*)", Pattern: "*.*"},
+		}
+	case ToolHarness:
+		title = "选择 Harness 配置文件"
+		filters = []wailsruntime.FileFilter{
+			{DisplayName: "YAML (*.yaml;*.yml)", Pattern: "*.yaml;*.yml"},
+			{DisplayName: "JSON (*.json)", Pattern: "*.json"},
+			{DisplayName: "All files (*.*)", Pattern: "*.*"},
+		}
+	default:
+		return ToolConfigStatus{}, fmt.Errorf("未知工具类型: %s", kind)
 	}
-	if st, err := os.Stat(def); err != nil || !st.IsDir() {
-		def = home
+
+	if defaultDir != "" {
+		if st, err := os.Stat(defaultDir); err != nil || !st.IsDir() {
+			defaultDir = home
+		}
 	}
+
 	path, err := wailsruntime.OpenFileDialog(a.ctx, wailsruntime.OpenDialogOptions{
-		Title: title, DefaultDirectory: def, Filters: filters, ShowHiddenFiles: true,
+		Title:            title,
+		DefaultDirectory: defaultDir,
+		Filters:          filters,
+		ShowHiddenFiles:  true, // ~/.codex may be hidden on some systems
 	})
 	if err != nil {
 		return ToolConfigStatus{}, err
 	}
-	if path == "" {
+	if strings.TrimSpace(path) == "" {
+		// cancelled
 		return a.resolveTool(k), nil
 	}
 	return a.SetToolConfigPath(string(k), path)
 }
 
+// SetToolConfigPath saves a manual path override and returns status.
 func (a *App) SetToolConfigPath(kind, path string) (ToolConfigStatus, error) {
-	k := ToolKind(strings.ToLower(kind))
-	path = expandPath(path)
+	k := normalizeToolKind(kind)
+	path = expandPath(strings.TrimSpace(path))
+	if path == "" {
+		return ToolConfigStatus{}, fmt.Errorf("路径不能为空")
+	}
 	ov := a.loadOverrides()
 	switch k {
 	case ToolCodex:
 		ov.Codex = path
 	case ToolClaude:
 		ov.Claude = path
-	case ToolClaudeDesktop:
-		ov.ClaudeDesktop = path
-	case ToolGemini:
-		ov.Gemini = path
-	case ToolOpenCode:
-		ov.OpenCode = path
 	case ToolOpenClaw:
 		ov.OpenClaw = path
-	case ToolHermes:
-		ov.Hermes = path
+	case ToolHarness:
+		ov.Harness = path
+	default:
+		return ToolConfigStatus{}, fmt.Errorf("未知工具类型: %s", kind)
 	}
-	_ = a.saveOverrides(ov)
-	return a.resolveTool(k), nil
+	if err := a.saveOverrides(ov); err != nil {
+		return ToolConfigStatus{}, err
+	}
+	st := a.resolveTool(k)
+	return st, nil
 }
 
+// ClearToolConfigPath removes manual override and re-runs auto search.
 func (a *App) ClearToolConfigPath(kind string) (ToolConfigStatus, error) {
-	k := ToolKind(strings.ToLower(kind))
+	k := normalizeToolKind(kind)
 	ov := a.loadOverrides()
 	switch k {
 	case ToolCodex:
 		ov.Codex = ""
 	case ToolClaude:
 		ov.Claude = ""
-	case ToolClaudeDesktop:
-		ov.ClaudeDesktop = ""
-	case ToolGemini:
-		ov.Gemini = ""
-	case ToolOpenCode:
-		ov.OpenCode = ""
 	case ToolOpenClaw:
 		ov.OpenClaw = ""
-	case ToolHermes:
-		ov.Hermes = ""
+	case ToolHarness:
+		ov.Harness = ""
+	default:
+		return ToolConfigStatus{}, fmt.Errorf("未知工具类型: %s", kind)
 	}
-	_ = a.saveOverrides(ov)
+	if err := a.saveOverrides(ov); err != nil {
+		return ToolConfigStatus{}, err
+	}
 	return a.resolveTool(k), nil
 }
 
+func matchCodexProvider(content, model string) string {
+	for _, m := range parseCodexModels(content) {
+		if m.ID == model && m.Provider != "" {
+			return m.Provider
+		}
+	}
+	return ""
+}
+
+// RevealConfigPath opens the file in system file manager (Finder / Explorer).
+func (a *App) RevealConfigPath(path string) error {
+	path = expandPath(strings.TrimSpace(path))
+	if path == "" {
+		return fmt.Errorf("路径为空")
+	}
+	// Prefer absolute path for shell tools
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
+
+	exists := fileExists(path)
+	dir := path
+	if exists {
+		dir = filepath.Dir(path)
+	} else if st, err := os.Stat(path); err == nil && st.IsDir() {
+		dir = path
+		exists = false
+	} else {
+		// open parent if file missing
+		dir = filepath.Dir(path)
+	}
+
+	switch goruntime.GOOS {
+	case "darwin":
+		if exists {
+			return exec.Command("open", "-R", path).Start()
+		}
+		return exec.Command("open", dir).Start()
+	case "windows":
+		// explorer /select,"C:\path\to\file" — arg must be a single token
+		if exists {
+			// Use cmd to avoid quoting issues with spaces in paths
+			return exec.Command("cmd", "/c", "explorer", "/select,"+path).Start()
+		}
+		return exec.Command("explorer", dir).Start()
+	default:
+		if exists {
+			// try to open parent; xdg-open doesn't have reveal
+			return exec.Command("xdg-open", dir).Start()
+		}
+		return exec.Command("xdg-open", dir).Start()
+	}
+}
+
+// ReadConfigText returns raw config file content for preview.
 func (a *App) ReadConfigText(path string) (string, error) {
-	path = expandPath(path)
+	path = expandPath(strings.TrimSpace(path))
+	if !fileExists(path) {
+		return "", fmt.Errorf("文件不存在: %s", path)
+	}
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
 	}
-	if len(b) > 200000 {
-		return string(b[:200000]) + "\n…", nil
+	// cap preview size
+	const max = 200_000
+	if len(b) > max {
+		return string(b[:max]) + "\n…(截断)", nil
 	}
 	return string(b), nil
-}
-
-func (a *App) RevealConfigPath(path string) error {
-	path = expandPath(path)
-	if abs, err := filepath.Abs(path); err == nil {
-		path = abs
-	}
-	switch goruntime.GOOS {
-	case "darwin":
-		if fileExists(path) {
-			return exec.Command("open", "-R", path).Start()
-		}
-		return exec.Command("open", filepath.Dir(path)).Start()
-	case "windows":
-		if fileExists(path) {
-			return exec.Command("cmd", "/c", "explorer", "/select,"+path).Start()
-		}
-		return exec.Command("explorer", filepath.Dir(path)).Start()
-	default:
-		return exec.Command("xdg-open", filepath.Dir(path)).Start()
-	}
-}
-
-// Minimal stubs for backup APIs used by frontend
-func (a *App) BackupDefaultConfig(kind, path string) (ToolConfigStatus, error) {
-	return a.resolveTool(ToolKind(kind)), nil
-}
-func (a *App) RestoreDefaultConfig(kind string) (ToolConfigStatus, error) {
-	return a.resolveTool(ToolKind(kind)), fmt.Errorf("请使用备份目录手动恢复")
-}
-func (a *App) ClearDefaultBackup(kind string) (ToolConfigStatus, error) {
-	return a.resolveTool(ToolKind(kind)), nil
-}
-
-// Model apply simplified
-type ModelApplyRequest struct {
-	Kind     string `json:"kind"`
-	Path     string `json:"path"`
-	Model    string `json:"model"`
-	Provider string `json:"provider"`
-	BaseURL  string `json:"baseUrl"`
-	APIKey   string `json:"apiKey"`
-	Name     string `json:"name"`
-}
-
-func providerEnvVarName(providerID, displayName string) string {
-	base := slugify(providerID)
-	if base == "" || base == "custom" {
-		base = slugify(displayName)
-	}
-	if base == "" {
-		base = "custom"
-	}
-	return strings.ToLower(base) + "_api_key"
-}
-
-func (a *App) ApplyToolModel(req ModelApplyRequest) (ToolConfigStatus, error) {
-	k := ToolKind(strings.ToLower(req.Kind))
-	model := strings.TrimSpace(req.Model)
-	if model == "" {
-		return ToolConfigStatus{}, fmt.Errorf("模型不能为空")
-	}
-	path := expandPath(req.Path)
-	if path == "" {
-		path = a.resolveTool(k).Path
-	}
-	if path == "" {
-		return ToolConfigStatus{}, fmt.Errorf("未指定路径")
-	}
-	var content string
-	if fileExists(path) {
-		b, err := os.ReadFile(path)
-		if err != nil {
-			return ToolConfigStatus{}, err
-		}
-		content = string(b)
-	}
-	providerID := strings.TrimSpace(req.Provider)
-	if providerID == "" {
-		providerID = "custom"
-	}
-	if providerID == "codex_proxy" {
-		providerID = "deepseek"
-	}
-	baseURL := strings.TrimRight(strings.TrimSpace(req.BaseURL), "/")
-	apiKey := strings.TrimSpace(req.APIKey)
-	name := req.Name
-	if name == "" {
-		name = model
-	}
-	writeBase := baseURL
-	if a.proxy != nil && a.proxy.status().Running && k != ToolClaudeDesktop && k != ToolGemini {
-		writeBase = a.proxy.baseURL()
-	}
-
-	switch k {
-	case ToolCodex:
-		out := setTomlTopLevelString(content, "model", model)
-		out = setTomlTopLevelString(out, "model_provider", providerID)
-		envVar := providerEnvVarName(providerID, name)
-		// ensure provider block
-		out = ensureProviderBlock(out, providerID, name, writeBase, envVar, apiKey)
-		out = removeTomlProviderBlock(out, "codex_proxy")
-		if _, err := writeConfigWithSnapshot(path, out, "apply codex model"); err != nil {
-			return ToolConfigStatus{}, err
-		}
-		if apiKey != "" {
-			_ = os.Setenv(envVar, apiKey)
-		}
-	case ToolClaude:
-		var raw map[string]any
-		if content != "" {
-			_ = json.Unmarshal([]byte(content), &raw)
-		}
-		if raw == nil {
-			raw = map[string]any{}
-		}
-		raw["model"] = model
-		env, _ := raw["env"].(map[string]any)
-		if env == nil {
-			env = map[string]any{}
-		}
-		env["ANTHROPIC_MODEL"] = model
-		if writeBase != "" {
-			env["ANTHROPIC_BASE_URL"] = writeBase
-		}
-		if apiKey != "" {
-			env["ANTHROPIC_API_KEY"] = apiKey
-			env["ANTHROPIC_AUTH_TOKEN"] = apiKey
-		}
-		raw["env"] = env
-		b, _ := json.MarshalIndent(raw, "", "  ")
-		if _, err := writeConfigWithSnapshot(path, string(b)+"\n", "apply claude model"); err != nil {
-			return ToolConfigStatus{}, err
-		}
-	default:
-		writes, err := buildManagedToolWrites(k, path, model, providerID, name, writeBase, apiKey)
-		if err != nil {
-			return a.resolveTool(k), err
-		}
-		if _, err := applyConfigWrites(writes); err != nil {
-			return a.resolveTool(k), err
-		}
-	}
-	st := a.resolveTool(k)
-	st.Message = "模型已切换为 " + model
-	if writeBase != "" && isLocalProxyURL(writeBase) {
-		st.Message += "；base_url→本地代理"
-	}
-	return st, nil
-}
-
-func (a *App) PreviewApplyToolModel(req ModelApplyRequest) ([]ConfigWriteResult, error) {
-	k := ToolKind(strings.ToLower(req.Kind))
-	path := expandPath(req.Path)
-	if path == "" {
-		path = a.resolveTool(k).Path
-	}
-	providerID := strings.TrimSpace(req.Provider)
-	if providerID == "" {
-		providerID = "custom"
-	}
-	name := strings.TrimSpace(req.Name)
-	if name == "" {
-		name = strings.TrimSpace(req.Model)
-	}
-	base := strings.TrimRight(strings.TrimSpace(req.BaseURL), "/")
-	if a.proxy != nil && a.proxy.status().Running && k != ToolClaudeDesktop && k != ToolGemini {
-		base = a.proxy.baseURL()
-	}
-	writes, err := buildManagedToolWrites(k, path, strings.TrimSpace(req.Model), providerID, name, base, strings.TrimSpace(req.APIKey))
-	if err != nil {
-		return nil, err
-	}
-	results := make([]ConfigWriteResult, 0, len(writes))
-	for _, write := range writes {
-		result, err := previewConfigWrite(write.Path, write.Content)
-		if err != nil {
-			return nil, err
-		}
-		results = append(results, result)
-	}
-	return results, nil
-}
-
-func (a *App) SetToolModel(kind, path, model, provider string) (ToolConfigStatus, error) {
-	return a.ApplyToolModel(ModelApplyRequest{Kind: kind, Path: path, Model: model, Provider: provider})
-}
-
-func ensureProviderBlock(content, id, name, baseURL, envKey, apiKey string) string {
-	re := regexp.MustCompile(`(?m)^\[model_providers\.` + regexp.QuoteMeta(id) + `\]\s*$`)
-	if !re.MatchString(content) {
-		content += "\n[model_providers." + id + "]\n"
-	}
-	for _, field := range []struct{ key, value string }{
-		{"name", name}, {"base_url", baseURL}, {"env_key", envKey}, {"api_key", apiKey}, {"wire_api", "chat"},
-	} {
-		if field.value != "" {
-			content = setProviderField(content, id, field.key, field.value)
-		}
-	}
-	return content
 }

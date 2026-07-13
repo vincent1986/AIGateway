@@ -1,0 +1,5 @@
+1fd25818a9bfe3417ce78982af98e6b86377d4f1589990509f8bebe1ff395df6  AIGateway-v2.0.0-macos-arm64.zip
+e869cf69c8d580203473a39a4e36a026d114e87485dae3e46d4b4d17caaaf80c  AIGateway-v2.0.0-macos-amd64.zip
+f8791f72337ae40d75b04a946de541c936680abfb1901a14f6924f54b6b5a2c8  AIGateway-v2.0.0-windows-amd64-setup.exe
+b202aa2632afac67ef7f422b6952e5493ed8a7d6536ff50e9dfa75599a316b5a  AIGateway-v2.0.0-windows-amd64-portable.zip
+74818ed5feb07c12413628eb89508238439230dca9a305ca3d9593c86f5cf0cf  AIGateway-v2.0.0-linux-amd64.tar.gz

@@ -31,7 +31,6 @@ export namespace main {
 	    modelCount: number;
 	    sample: string[];
 	    error?: string;
-	    apiFormat?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ConnectionTestResult(source);
@@ -47,7 +46,6 @@ export namespace main {
 	        this.modelCount = source["modelCount"];
 	        this.sample = source["sample"];
 	        this.error = source["error"];
-	        this.apiFormat = source["apiFormat"];
 	    }
 	}
 	export class FetchModelItem {
@@ -90,6 +88,70 @@ export namespace main {
 	        this.name = source["name"];
 	    }
 	}
+	export class ModelGroupRouteView {
+	    id: string;
+	    providerId: string;
+	    providerName: string;
+	    providerModelId: string;
+	    priority: number;
+	    enabled: boolean;
+	    status: string;
+	    usedTokens: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ModelGroupRouteView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.providerId = source["providerId"];
+	        this.providerName = source["providerName"];
+	        this.providerModelId = source["providerModelId"];
+	        this.priority = source["priority"];
+	        this.enabled = source["enabled"];
+	        this.status = source["status"];
+	        this.usedTokens = source["usedTokens"];
+	    }
+	}
+	export class ModelGroupView {
+	    id: string;
+	    name: string;
+	    enabled: boolean;
+	    strategy: string;
+	    routes: ModelGroupRouteView[];
+	
+	    static createFrom(source: any = {}) {
+	        return new ModelGroupView(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.enabled = source["enabled"];
+	        this.strategy = source["strategy"];
+	        this.routes = this.convertValues(source["routes"], ModelGroupRouteView);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class ModelOption {
 	    id: string;
 	    name: string;
@@ -104,6 +166,36 @@ export namespace main {
 	        this.id = source["id"];
 	        this.name = source["name"];
 	        this.provider = source["provider"];
+	    }
+	}
+	export class TokenPackage {
+	    id: string;
+	    name: string;
+	    totalTokens: number;
+	    usedOffset: number;
+	    price: number;
+	    currency: string;
+	    startAt: string;
+	    expireAt: string;
+	    note: string;
+	    active: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new TokenPackage(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.totalTokens = source["totalTokens"];
+	        this.usedOffset = source["usedOffset"];
+	        this.price = source["price"];
+	        this.currency = source["currency"];
+	        this.startAt = source["startAt"];
+	        this.expireAt = source["expireAt"];
+	        this.note = source["note"];
+	        this.active = source["active"];
 	    }
 	}
 	export class ProviderModel {
@@ -132,8 +224,10 @@ export namespace main {
 	    baseUrl: string;
 	    apiKey: string;
 	    color: string;
-	    apiFormat: string;
 	    models: ProviderModel[];
+	    useProxy?: boolean;
+	    formatStandard: string;
+	    tokenPackages: TokenPackage[];
 	
 	    static createFrom(source: any = {}) {
 	        return new Provider(source);
@@ -146,8 +240,10 @@ export namespace main {
 	        this.baseUrl = source["baseUrl"];
 	        this.apiKey = source["apiKey"];
 	        this.color = source["color"];
-	        this.apiFormat = source["apiFormat"];
 	        this.models = this.convertValues(source["models"], ProviderModel);
+	        this.useProxy = source["useProxy"];
+	        this.formatStandard = source["formatStandard"];
+	        this.tokenPackages = this.convertValues(source["tokenPackages"], TokenPackage);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -169,6 +265,40 @@ export namespace main {
 		}
 	}
 	
+	export class ProviderPackageStatus {
+	    providerId: string;
+	    providerName: string;
+	    packageId: string;
+	    packageName: string;
+	    totalTokens: number;
+	    usedTokens: number;
+	    proxyTokens: number;
+	    remaining: number;
+	    percentUsed: number;
+	    expireAt: string;
+	    expired: boolean;
+	    hasPackage: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ProviderPackageStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.providerId = source["providerId"];
+	        this.providerName = source["providerName"];
+	        this.packageId = source["packageId"];
+	        this.packageName = source["packageName"];
+	        this.totalTokens = source["totalTokens"];
+	        this.usedTokens = source["usedTokens"];
+	        this.proxyTokens = source["proxyTokens"];
+	        this.remaining = source["remaining"];
+	        this.percentUsed = source["percentUsed"];
+	        this.expireAt = source["expireAt"];
+	        this.expired = source["expired"];
+	        this.hasPackage = source["hasPackage"];
+	    }
+	}
 	export class ProxyConfig {
 	    enabled: boolean;
 	    host: string;
@@ -239,6 +369,7 @@ export namespace main {
 	        this.platformName = source["platformName"];
 	    }
 	}
+	
 	export class ToolConfigStatus {
 	    kind: string;
 	    name: string;
@@ -247,15 +378,22 @@ export namespace main {
 	    exists: boolean;
 	    model: string;
 	    modelProvider: string;
+	    proxyModel: string;
+	    proxyTargetModel: string;
 	    searchPaths: string[];
 	    candidates: ModelOption[];
 	    source: string;
 	    message: string;
 	    os: string;
+	    managed: boolean;
 	    hasDefaultBackup: boolean;
 	    defaultBackupPath: string;
 	    defaultBackupAt: string;
 	    defaultBackupOrigin: string;
+	    hasTakeoverBackup: boolean;
+	    takeoverBackupPath: string;
+	    takeoverBackupAt: string;
+	    takeoverBackupOrigin: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ToolConfigStatus(source);
@@ -270,15 +408,126 @@ export namespace main {
 	        this.exists = source["exists"];
 	        this.model = source["model"];
 	        this.modelProvider = source["modelProvider"];
+	        this.proxyModel = source["proxyModel"];
+	        this.proxyTargetModel = source["proxyTargetModel"];
 	        this.searchPaths = source["searchPaths"];
 	        this.candidates = this.convertValues(source["candidates"], ModelOption);
 	        this.source = source["source"];
 	        this.message = source["message"];
 	        this.os = source["os"];
+	        this.managed = source["managed"];
 	        this.hasDefaultBackup = source["hasDefaultBackup"];
 	        this.defaultBackupPath = source["defaultBackupPath"];
 	        this.defaultBackupAt = source["defaultBackupAt"];
 	        this.defaultBackupOrigin = source["defaultBackupOrigin"];
+	        this.hasTakeoverBackup = source["hasTakeoverBackup"];
+	        this.takeoverBackupPath = source["takeoverBackupPath"];
+	        this.takeoverBackupAt = source["takeoverBackupAt"];
+	        this.takeoverBackupOrigin = source["takeoverBackupOrigin"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class UsageBucket {
+	    key: string;
+	    calls: number;
+	    inputTokens: number;
+	    outputTokens: number;
+	    totalTokens: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new UsageBucket(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.key = source["key"];
+	        this.calls = source["calls"];
+	        this.inputTokens = source["inputTokens"];
+	        this.outputTokens = source["outputTokens"];
+	        this.totalTokens = source["totalTokens"];
+	    }
+	}
+	export class UsageEvent {
+	    time: string;
+	    day: string;
+	    provider: string;
+	    model: string;
+	    endpoint: string;
+	    inputTokens: number;
+	    outputTokens: number;
+	    totalTokens: number;
+	    status: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new UsageEvent(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.time = source["time"];
+	        this.day = source["day"];
+	        this.provider = source["provider"];
+	        this.model = source["model"];
+	        this.endpoint = source["endpoint"];
+	        this.inputTokens = source["inputTokens"];
+	        this.outputTokens = source["outputTokens"];
+	        this.totalTokens = source["totalTokens"];
+	        this.status = source["status"];
+	    }
+	}
+	export class UsageTotals {
+	    calls: number;
+	    inputTokens: number;
+	    outputTokens: number;
+	    totalTokens: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new UsageTotals(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.calls = source["calls"];
+	        this.inputTokens = source["inputTokens"];
+	        this.outputTokens = source["outputTokens"];
+	        this.totalTokens = source["totalTokens"];
+	    }
+	}
+	export class UsageStats {
+	    total: UsageTotals;
+	    byDay: UsageBucket[];
+	    byModel: UsageBucket[];
+	    byProvider: UsageBucket[];
+	    recent: UsageEvent[];
+	
+	    static createFrom(source: any = {}) {
+	        return new UsageStats(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.total = this.convertValues(source["total"], UsageTotals);
+	        this.byDay = this.convertValues(source["byDay"], UsageBucket);
+	        this.byModel = this.convertValues(source["byModel"], UsageBucket);
+	        this.byProvider = this.convertValues(source["byProvider"], UsageBucket);
+	        this.recent = this.convertValues(source["recent"], UsageEvent);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

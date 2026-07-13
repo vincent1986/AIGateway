@@ -1,0 +1,5 @@
+4b3c1f47e0a975d8b7fd6a04c51e11f0393c87b1709ced2c17f418f85fda049a  AI-Switch-v1.0.0-macos-arm64.zip
+4b1148349e3ec97de98a230c3f73d7dbe350b4401fa1ab67969c865e94abebbe  AI-Switch-v1.0.0-macos-amd64.zip
+42480f2ab31d8f0b916fc1675b711c42f9e034166f47a6b4779c2ef75eaa0ed9  AI-Switch-v1.0.0-windows-amd64-setup.exe
+2aaf31daec54b8c08aa87afe29d3c7405a2fbbed67f72c71d065083938cbdda9  AI-Switch-v1.0.0-windows-amd64-portable.zip
+9a127e5367c1f3fa81572b5170792bb069d368e24b3327872d0a4e8399036ecc  AI-Switch-v1.0.0-linux-amd64.tar.gz

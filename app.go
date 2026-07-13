@@ -1,18 +1,33 @@
 package main
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
+// App struct
 type App struct {
 	ctx   context.Context
 	proxy *proxyServer
 }
 
+// NewApp creates a new App application struct
 func NewApp() *App {
-	return &App{proxy: newProxyServer()}
+	return &App{
+		proxy: newProxyServer(),
+	}
 }
 
+// startup is called when the app starts. The context is saved
+// so we can call the runtime methods
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	// open SQLite early (migrate JSON if needed)
+	if _, err := openDB(); err != nil {
+		// non-fatal: proxy/providers fall back to JSON
+		fmt.Printf("aigateway: openDB: %v\n", err)
+	}
+	// auto-start OpenAI proxy if configured
 	if a.proxy != nil {
 		cfg := a.proxy.getConfig()
 		if cfg.AutoStart || cfg.Enabled {
@@ -23,8 +38,10 @@ func (a *App) startup(ctx context.Context) {
 	}
 }
 
+// shutdown stops background services.
 func (a *App) shutdown(ctx context.Context) {
 	if a.proxy != nil {
 		_ = a.proxy.stop()
 	}
+	closeDB()
 }

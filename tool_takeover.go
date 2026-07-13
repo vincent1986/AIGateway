@@ -1,0 +1,172 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+const gatewayProviderID = "aigateway"
+
+// InjectGateway points a tool's base_url at the local AIGateway forever (PRD 3.4).
+// kind: codex|chatgpt|claude|openclaw|harness
+func (a *App) InjectGateway(kind string) (ToolConfigStatus, error) {
+	k := normalizeToolKind(kind)
+	d := driverByID(kind)
+	if d == nil {
+		d = driverByID(string(k))
+	}
+	if d == nil && k != ToolCodex && k != ToolClaude {
+		return ToolConfigStatus{}, fmt.Errorf("未知工具类型: %s", kind)
+	}
+
+	if a.proxy == nil {
+		a.proxy = newProxyServer()
+	}
+	if !a.proxy.status().Running {
+		if err := a.proxy.start(); err != nil {
+			return a.resolveTool(k), fmt.Errorf("启动网关失败: %w", err)
+		}
+	}
+	base := a.proxy.baseURL()
+	if base == "" {
+		base = "http://127.0.0.1:18080/v1"
+	}
+
+	st := a.resolveTool(k)
+	path := st.Path
+	if path == "" && d != nil {
+		path = d.PreferredPath()
+	}
+	if path == "" {
+		return st, fmt.Errorf("未找到配置路径，请先手动选择")
+	}
+
+	var raw []byte
+	if err := saveTakeoverBackup(k, path); err != nil {
+		return st, fmt.Errorf("备份接管前配置失败: %w", err)
+	}
+	if _, err := ensureDefaultBackup(k, path); err != nil {
+		return st, fmt.Errorf("备份默认配置失败: %w", err)
+	}
+	if fileExists(path) {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return st, err
+		}
+		raw = b
+		savePreWriteSnapshot(k, path, raw)
+	} else {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return st, err
+		}
+	}
+
+	var err error
+	if d != nil {
+		err = d.InjectGateway(path, base, "")
+	} else {
+		// legacy codex/claude only
+		var next string
+		switch k {
+		case ToolCodex:
+			next, err = injectGatewayCodex(string(raw), base)
+		case ToolClaude:
+			next, err = injectGatewayClaude(string(raw), base)
+		}
+		if err == nil {
+			next = preserveLineEndings(string(raw), next)
+			err = writeFileAtomic(path, next)
+		}
+	}
+	if err != nil {
+		return st, err
+	}
+	if err := validateToolConfigWrite(k, path, appProxyModel(k)); err != nil {
+		return st, err
+	}
+
+	// remember override path
+	ov := a.loadOverrides()
+	switch k {
+	case ToolCodex:
+		if strings.TrimSpace(ov.Codex) == "" {
+			ov.Codex = path
+		}
+	case ToolClaude:
+		if strings.TrimSpace(ov.Claude) == "" {
+			ov.Claude = path
+		}
+	case ToolOpenClaw:
+		if strings.TrimSpace(ov.OpenClaw) == "" {
+			ov.OpenClaw = path
+		}
+	case ToolHarness:
+		if strings.TrimSpace(ov.Harness) == "" {
+			ov.Harness = path
+		}
+	}
+	_ = a.saveOverrides(ov)
+
+	st = a.resolveTool(k)
+	st.Message = fmt.Sprintf("已接管：base_url → %s（后续模型切换在「模型管理」完成）", base)
+	return st, nil
+}
+
+// RollbackGateway restores the default backup for a tool (卸载/还原).
+func (a *App) RollbackGateway(kind string) (ToolConfigStatus, error) {
+	k := normalizeToolKind(kind)
+	a.appLogf("rollback request rawKind=%q normalizedKind=%q", kind, k)
+	st, err := a.restoreTakeoverConfig(k)
+	if err != nil {
+		a.appLogf("rollback failed kind=%q err=%v", k, err)
+		return st, err
+	}
+	a.appLogf("rollback success kind=%q path=%q model=%q provider=%q managed=%v", k, st.Path, st.Model, st.ModelProvider, st.Managed)
+	return st, nil
+}
+
+func injectGatewayCodex(content, gatewayBase string) (string, error) {
+	if strings.TrimSpace(content) == "" {
+		content = "# AIGateway managed\n"
+	}
+	content = removeTomlProviderBlock(content, "codex_proxy")
+	// Local gateway usually has no auth — use inline api_key so Codex does not
+	// require a missing system env (Missing environment variable: aigateway_api_key).
+	const localKey = "aigateway"
+	content = upsertCodexModelProvider(content, gatewayProviderID, "AIGateway", gatewayBase, localKey)
+	content = setProviderField(content, gatewayProviderID, "base_url", gatewayBase)
+	content = setProviderField(content, gatewayProviderID, "api_key", localKey)
+	// Drop env_key so Codex won't look for unset AIGATEWAY env vars
+	content = removeProviderField(content, gatewayProviderID, "env_key")
+	content = setTomlTopLevelString(content, "model", appProxyModel(ToolCodex))
+	content = setTomlTopLevelString(content, "model_provider", gatewayProviderID)
+	return content, nil
+}
+
+func injectGatewayClaude(content, gatewayBase string) (string, error) {
+	gatewayBase = normalizeClaudeGatewayURL(gatewayBase)
+	var root map[string]any
+	if strings.TrimSpace(content) == "" {
+		root = map[string]any{}
+	} else if err := json.Unmarshal([]byte(content), &root); err != nil {
+		return "", fmt.Errorf("解析 Claude settings.json 失败（为避免覆盖现有配置，已停止写入）: %w", err)
+	}
+	env, _ := root["env"].(map[string]any)
+	if env == nil {
+		env = map[string]any{}
+	}
+	env["OPENAI_BASE_URL"] = gatewayBase
+	env["ANTHROPIC_BASE_URL"] = gatewayBase
+	env["ANTHROPIC_MODEL"] = appProxyModel(ToolClaude)
+	root["env"] = env
+	root["model"] = appProxyModel(ToolClaude)
+	root["apiBaseUrl"] = gatewayBase
+	b, err := json.MarshalIndent(root, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(b) + "\n", nil
+}

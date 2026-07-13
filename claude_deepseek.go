@@ -25,6 +25,16 @@ const (
 	deepSeekDefaultFlash  = "deepseek-v4-flash"
 )
 
+// Claude Code appends /v1/messages to ANTHROPIC_BASE_URL itself. The local
+// proxy exposes that route, so its client-facing base must not include /v1.
+func normalizeClaudeGatewayURL(baseURL string) string {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if isLocalProxyURL(baseURL) {
+		baseURL = strings.TrimSuffix(baseURL, "/v1")
+	}
+	return strings.TrimRight(baseURL, "/")
+}
+
 // ClaudeDeepSeekRequest configures Claude Code for DeepSeek Anthropic-compatible API.
 type ClaudeDeepSeekRequest struct {
 	APIKey      string `json:"apiKey"`      // DeepSeek API Key
@@ -32,7 +42,8 @@ type ClaudeDeepSeekRequest struct {
 	MainModel   string `json:"mainModel"`   // default deepseek-v4-pro[1m]
 	HaikuModel  string `json:"haikuModel"`  // default deepseek-v4-flash
 	EffortLevel string `json:"effortLevel"` // default max
-	// SetSystemEnv also writes user/shell env so new terminals inherit
+	// Deprecated compatibility field. Model changes are scoped to settings.json;
+	// this flag is intentionally ignored and never changes global environment.
 	SetSystemEnv bool `json:"setSystemEnv"`
 }
 
@@ -40,7 +51,6 @@ type ClaudeDeepSeekRequest struct {
 func (a *App) ApplyDeepSeekClaudeCode(req ClaudeDeepSeekRequest) (ToolConfigStatus, error) {
 	apiKey := strings.TrimSpace(req.APIKey)
 	if apiKey == "" {
-		// try from saved DeepSeek provider
 		if list, err := loadProvidersFromDisk(); err == nil {
 			for _, p := range list {
 				if isDeepSeekProvider(p) && strings.TrimSpace(p.APIKey) != "" {
@@ -51,6 +61,10 @@ func (a *App) ApplyDeepSeekClaudeCode(req ClaudeDeepSeekRequest) (ToolConfigStat
 		}
 	}
 	if apiKey == "" {
+		// also try secret store
+		apiKey = loadProviderSecret("deepseek")
+	}
+	if apiKey == "" {
 		return ToolConfigStatus{}, fmt.Errorf("请提供 DeepSeek API Key（或在厂家中配置 DeepSeek）")
 	}
 
@@ -58,6 +72,8 @@ func (a *App) ApplyDeepSeekClaudeCode(req ClaudeDeepSeekRequest) (ToolConfigStat
 	if mainModel == "" {
 		mainModel = deepSeekDefaultPro
 	}
+	mainModel = normalizeDeepSeekMainModel(mainModel)
+
 	haiku := strings.TrimSpace(req.HaikuModel)
 	if haiku == "" {
 		haiku = deepSeekDefaultFlash
@@ -67,14 +83,12 @@ func (a *App) ApplyDeepSeekClaudeCode(req ClaudeDeepSeekRequest) (ToolConfigStat
 		effort = "max"
 	}
 
-	// resolve settings path
 	st := a.resolveTool(ToolClaude)
 	path := expandPath(req.Path)
 	if path == "" {
 		path = st.Path
 	}
 	if path == "" {
-		// create default user settings
 		home := userHome()
 		if home == "" {
 			return st, fmt.Errorf("无法定位 home 目录")
@@ -82,50 +96,75 @@ func (a *App) ApplyDeepSeekClaudeCode(req ClaudeDeepSeekRequest) (ToolConfigStat
 		path = filepath.Join(home, ".claude", "settings.json")
 	}
 
-	// ensure parent dir
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return st, err
 	}
 
 	var content string
+	var raw []byte
 	if fileExists(path) {
 		b, err := os.ReadFile(path)
 		if err != nil {
 			return st, err
 		}
+		raw = b
 		content = string(b)
+	}
+
+	autoBakMsg := ""
+	if len(raw) > 0 {
+		created, err := ensureDefaultBackup(ToolClaude, path)
+		if err != nil {
+			return st, fmt.Errorf("备份默认配置失败: %w", err)
+		}
+		if created {
+			autoBakMsg = "（已自动备份默认配置）"
+		}
+		savePreWriteSnapshot(ToolClaude, path, raw)
 	}
 
 	next, err := applyClaudeDeepSeekSettings(content, apiKey, mainModel, haiku, effort)
 	if err != nil {
 		return st, err
 	}
-	if _, err := writeConfigWithSnapshot(path, next, "apply claude deepseek"); err != nil {
+	if err := writeFileAtomic(path, next); err != nil {
+		return st, err
+	}
+	if err := validateToolConfigWrite(ToolClaude, path, mainModel); err != nil {
 		return st, err
 	}
 
-	// remember path override
 	_, _ = a.SetToolConfigPath("claude", path)
-
-	// system env (optional, default true)
-	setEnv := req.SetSystemEnv
-	// zero value false — treat as true unless explicitly false via separate field;
-	// for Wails JSON, missing bool is false, so default enable when not specified:
-	// We always set process env; shell persistence when SetSystemEnv is true OR always try best-effort.
-	_ = setClaudeDeepSeekSystemEnv(apiKey, mainModel, haiku, effort, true)
 
 	st = a.resolveTool(ToolClaude)
 	st.Message = fmt.Sprintf(
-		"已迁移 Claude Code → DeepSeek：BASE=%s MODEL=%s（settings: %s）",
-		deepSeekAnthropicBase, mainModel, path,
+		"已按 DeepSeek 官方文档迁移 Claude Code：BASE=%s MODEL=%s%s",
+		deepSeekAnthropicBase, mainModel, autoBakMsg,
 	)
-	_ = setEnv
 	return st, nil
 }
 
 func isDeepSeekProvider(p Provider) bool {
 	n := strings.ToLower(p.Name + " " + p.BaseURL + " " + p.ID)
 	return strings.Contains(n, "deepseek")
+}
+
+func isDeepSeekHint(providerHint, baseURL, model string) bool {
+	h := strings.ToLower(providerHint + " " + baseURL + " " + model)
+	return strings.Contains(h, "deepseek")
+}
+
+func normalizeDeepSeekMainModel(model string) string {
+	m := strings.TrimSpace(model)
+	switch strings.ToLower(m) {
+	case "deepseek-v4-pro", "deepseek-v4-pro[1m]":
+		return deepSeekDefaultPro
+	case "deepseek-chat", "deepseek-reasoner":
+		// keep as-is for older ids; user may still want them
+		return m
+	default:
+		return m
+	}
 }
 
 func applyClaudeDeepSeekSettings(content, apiKey, mainModel, haiku, effort string) (string, error) {
@@ -139,20 +178,21 @@ func applyClaudeDeepSeekSettings(content, apiKey, mainModel, haiku, effort strin
 		raw = map[string]any{}
 	}
 
-	// top-level model
 	raw["model"] = mainModel
 
 	env, _ := raw["env"].(map[string]any)
 	if env == nil {
 		env = map[string]any{}
 	}
+	// Claude Code rejects configurations that define both credential modes.
+	delete(env, "ANTHROPIC_API_KEY")
 
 	// Official DeepSeek → Claude Code env block
 	env["ANTHROPIC_BASE_URL"] = deepSeekAnthropicBase
 	env["ANTHROPIC_AUTH_TOKEN"] = apiKey
-	// keep API_KEY in sync for tools that still read it
-	env["ANTHROPIC_API_KEY"] = apiKey
 	env["ANTHROPIC_MODEL"] = mainModel
+	env["ANTHROPIC_CUSTOM_MODEL_OPTION"] = mainModel
+	env["ANTHROPIC_CUSTOM_MODEL_OPTION_NAME"] = mainModel
 	env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = mainModel
 	env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = mainModel
 	env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = haiku
@@ -168,68 +208,47 @@ func applyClaudeDeepSeekSettings(content, apiKey, mainModel, haiku, effort strin
 	return string(b) + "\n", nil
 }
 
-func setClaudeDeepSeekSystemEnv(apiKey, mainModel, haiku, effort string, persist bool) error {
-	vars := map[string]string{
-		"ANTHROPIC_BASE_URL":             deepSeekAnthropicBase,
-		"ANTHROPIC_AUTH_TOKEN":           apiKey,
-		"ANTHROPIC_API_KEY":              apiKey,
-		"ANTHROPIC_MODEL":                mainModel,
-		"ANTHROPIC_DEFAULT_OPUS_MODEL":   mainModel,
-		"ANTHROPIC_DEFAULT_SONNET_MODEL": mainModel,
-		"ANTHROPIC_DEFAULT_HAIKU_MODEL":  haiku,
-		"CLAUDE_CODE_SUBAGENT_MODEL":     haiku,
-		"CLAUDE_CODE_EFFORT_LEVEL":       effort,
-	}
-	for k, v := range vars {
-		_ = os.Setenv(k, v)
-		if persist {
-			_ = setSystemEnvVar(k, v)
-		}
-	}
-	return nil
-}
-
-// ApplyToolModel Claude branch helper: if DeepSeek-like, use official Anthropic base.
+// applyClaudeEnvForProvider fills Claude settings env for a provider (DeepSeek uses official mapping).
 func applyClaudeEnvForProvider(env map[string]any, model, baseURL, apiKey, providerHint string) {
 	if env == nil {
 		return
 	}
-	hint := strings.ToLower(providerHint + " " + baseURL)
-	isDS := strings.Contains(hint, "deepseek")
-
-	if isDS {
-		// Official Anthropic-compatible endpoint (NOT /v1 openai path)
-		env["ANTHROPIC_BASE_URL"] = deepSeekAnthropicBase
-		if apiKey != "" {
-			env["ANTHROPIC_AUTH_TOKEN"] = apiKey
-			env["ANTHROPIC_API_KEY"] = apiKey
-		}
-		// Model defaults: if user picks flash, use as haiku/subagent; else pro for main
-		main := model
+	// Use one credential mode consistently. AUTH_TOKEN is the mode supported
+	// for custom Anthropic-compatible gateways.
+	delete(env, "ANTHROPIC_API_KEY")
+	if isDeepSeekHint(providerHint, baseURL, model) {
+		main := normalizeDeepSeekMainModel(model)
 		if main == "" {
 			main = deepSeekDefaultPro
 		}
 		haiku := deepSeekDefaultFlash
 		if strings.Contains(strings.ToLower(main), "flash") {
-			haiku = main
-			// still keep pro for opus/sonnet if main is flash? docs use pro for main roles
-			// If user selected flash as main model, apply flash everywhere they chose
+			// user selected flash as primary — apply everywhere
+			env["ANTHROPIC_BASE_URL"] = deepSeekAnthropicBase
+			if apiKey != "" {
+				env["ANTHROPIC_AUTH_TOKEN"] = apiKey
+			}
 			env["ANTHROPIC_MODEL"] = main
+			env["ANTHROPIC_CUSTOM_MODEL_OPTION"] = main
+			env["ANTHROPIC_CUSTOM_MODEL_OPTION_NAME"] = main
 			env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = main
 			env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = main
 			env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = main
 			env["CLAUDE_CODE_SUBAGENT_MODEL"] = main
-		} else {
-			// normalize short ids to official tagged names when possible
-			if main == "deepseek-v4-pro" {
-				main = deepSeekDefaultPro
-			}
-			env["ANTHROPIC_MODEL"] = main
-			env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = main
-			env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = main
-			env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = haiku
-			env["CLAUDE_CODE_SUBAGENT_MODEL"] = haiku
+			env["CLAUDE_CODE_EFFORT_LEVEL"] = "max"
+			return
 		}
+		env["ANTHROPIC_BASE_URL"] = deepSeekAnthropicBase
+		if apiKey != "" {
+			env["ANTHROPIC_AUTH_TOKEN"] = apiKey
+		}
+		env["ANTHROPIC_MODEL"] = main
+		env["ANTHROPIC_CUSTOM_MODEL_OPTION"] = main
+		env["ANTHROPIC_CUSTOM_MODEL_OPTION_NAME"] = main
+		env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = main
+		env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = main
+		env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = haiku
+		env["CLAUDE_CODE_SUBAGENT_MODEL"] = haiku
 		env["CLAUDE_CODE_EFFORT_LEVEL"] = "max"
 		return
 	}
@@ -237,15 +256,16 @@ func applyClaudeEnvForProvider(env map[string]any, model, baseURL, apiKey, provi
 	// generic third-party / anthropic
 	if model != "" {
 		env["ANTHROPIC_MODEL"] = model
+		env["ANTHROPIC_CUSTOM_MODEL_OPTION"] = model
+		env["ANTHROPIC_CUSTOM_MODEL_OPTION_NAME"] = model
 		env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = model
 		env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = model
 		env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = model
 	}
 	if baseURL != "" {
-		env["ANTHROPIC_BASE_URL"] = baseURL
+		env["ANTHROPIC_BASE_URL"] = normalizeClaudeGatewayURL(baseURL)
 	}
 	if apiKey != "" {
 		env["ANTHROPIC_AUTH_TOKEN"] = apiKey
-		env["ANTHROPIC_API_KEY"] = apiKey
 	}
 }
