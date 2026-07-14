@@ -32,6 +32,8 @@
 |------|------|
 | `AIGateway-v2.0.1-macos-arm64.zip` | macOS Apple Silicon |
 | `AIGateway-v2.0.1-macos-amd64.zip` | macOS Intel |
+| `AIGateway-v2.0.1-windows-amd64-portable.zip` | Windows x64 便携版 |
+| `AIGateway-v2.0.1-windows-amd64-setup.exe` | Windows x64 安装版 |
 | `SHA256SUMS.txt` | 校验和 |
 
 请直接从 GitHub Release 页面下载：  
@@ -62,6 +64,8 @@ The downloadable assets produced for this release are:
 |------|------|
 | `AIGateway-v2.0.1-macos-arm64.zip` | macOS Apple Silicon |
 | `AIGateway-v2.0.1-macos-amd64.zip` | macOS Intel |
+| `AIGateway-v2.0.1-windows-amd64-portable.zip` | Windows x64 portable |
+| `AIGateway-v2.0.1-windows-amd64-setup.exe` | Windows x64 installer |
 | `SHA256SUMS.txt` | Checksums |
 
 Use the GitHub Release page for downloads:  

@@ -22,6 +22,10 @@ export function BackupDefaultConfig(arg1, arg2) {
   return window['go']['main']['App']['BackupDefaultConfig'](arg1, arg2);
 }
 
+export function CheckForUpdate() {
+  return window['go']['main']['App']['CheckForUpdate']();
+}
+
 export function ClearDefaultBackup(arg1) {
   return window['go']['main']['App']['ClearDefaultBackup'](arg1);
 }

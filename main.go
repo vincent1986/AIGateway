@@ -19,7 +19,7 @@ func main() {
 	// that area (not screen 100vh) so layout matches init size and resizes cleanly.
 	err := wails.Run(&options.App{
 		Title:            "AIGateway",
-		Width:            1180,
+		Width:            1280,
 		Height:           780,
 		MinWidth:         640,
 		MinHeight:        420,
@@ -30,16 +30,20 @@ func main() {
 			Assets: assets,
 		},
 		BackgroundColour: &options.RGBA{R: 15, G: 20, B: 25, A: 1},
-		OnStartup:        app.startup,
-		OnShutdown:       app.shutdown,
+		SingleInstanceLock: &options.SingleInstanceLock{
+			UniqueId:               "com.vincent1986.aigateway",
+			OnSecondInstanceLaunch: app.handleSecondInstanceLaunch,
+		},
+		OnStartup:  app.startup,
+		OnShutdown: app.shutdown,
 		Bind: []interface{}{
 			app,
 		},
 		Windows: &windows.Options{
 			WebviewIsTransparent: false,
 			WindowIsTranslucent:  false,
-			DisableWindowIcon:   false,
-			Theme:               windows.SystemDefault,
+			DisableWindowIcon:    false,
+			Theme:                windows.SystemDefault,
 		},
 	})
 

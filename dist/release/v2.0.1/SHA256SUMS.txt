@@ -1,2 +1,5 @@
-62fb9055926782cb01feac23d7bef6115d69f7c96d45532f0d02184df8ad26a7  dist/release/v2.0.1/AIGateway-v2.0.1-macos-arm64.zip
-208ef23df64656c1a0c191f06154727bde00e6190ec8bfe8713b0c31ea7e82d9  dist/release/v2.0.1/AIGateway-v2.0.1-macos-amd64.zip
+62fb9055926782cb01feac23d7bef6115d69f7c96d45532f0d02184df8ad26a7  AIGateway-v2.0.1-macos-arm64.zip
+208ef23df64656c1a0c191f06154727bde00e6190ec8bfe8713b0c31ea7e82d9  AIGateway-v2.0.1-macos-amd64.zip
+1f60694a06c3b348fc65f6136b37867c5aa66d76fae5a64750f4f2d432a6a8c2  AIGateway-v2.0.1-linux-amd64.tar.gz
+29b2c9feed0957f859f639f04305260ca860d06fe88cc6ab6c2d66f3a7a5a445  AIGateway-v2.0.1-windows-amd64-portable.zip
+f6e8e427c4dbeac9a9f7844bd93af781818ef4e66ba1680293edfbe666817124  AIGateway-v2.0.1-windows-amd64-setup.exe

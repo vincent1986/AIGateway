@@ -548,6 +548,33 @@ export namespace main {
 		    return a;
 		}
 	}
+	
+	export class VersionUpgradeInfo {
+	    currentVersion: string;
+	    latestVersion: string;
+	    latestName: string;
+	    releaseUrl: string;
+	    publishedAt: string;
+	    checkedAt: string;
+	    hasUpdate: boolean;
+	    error?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new VersionUpgradeInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.currentVersion = source["currentVersion"];
+	        this.latestVersion = source["latestVersion"];
+	        this.latestName = source["latestName"];
+	        this.releaseUrl = source["releaseUrl"];
+	        this.publishedAt = source["publishedAt"];
+	        this.checkedAt = source["checkedAt"];
+	        this.hasUpdate = source["hasUpdate"];
+	        this.error = source["error"];
+	    }
+	}
 
 }
 

@@ -107,7 +107,7 @@ func defaultOllamaProvider() Provider {
 		ID:       "ollama",
 		Name:     "Ollama",
 		BaseURL:  "http://127.0.0.1:11434/v1",
-		APIKey:   "ollama", // Ollama ignores key; placeholder for OpenAI clients
+		APIKey:   "", // Ollama ignores key; keep it empty for local usage
 		Color:    "#c4c4c4",
 		UseProxy: &useProxy,
 		Models:   []ProviderModel{},
@@ -335,9 +335,6 @@ func (a *App) FetchProviderModels(baseURL, apiKey string) ([]FetchModelItem, err
 	if apiKey == "" && !isLocalOrNoAuthProvider(Provider{BaseURL: baseURL}) {
 		return nil, fmt.Errorf("请先填写 API Key")
 	}
-	if apiKey == "" {
-		apiKey = "ollama"
-	}
 	if _, err := url.ParseRequestURI(baseURL); err != nil {
 		return nil, fmt.Errorf("API Base URL 无效: %v", err)
 	}
@@ -347,9 +344,11 @@ func (a *App) FetchProviderModels(baseURL, apiKey string) ([]FetchModelItem, err
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+apiKey)
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		req.Header.Set("api-key", apiKey)
+	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("api-key", apiKey)
 
 	// Bypass Windows system proxy for localhost (Ollama); use system proxy for cloud APIs
 	client := newHTTPClient(30 * time.Second)
@@ -401,9 +400,6 @@ func (a *App) probeProvider(baseURL, apiKey string) ConnectionTestResult {
 		res.Error = "请先填写 API Key"
 		return res
 	}
-	if apiKey == "" {
-		apiKey = "ollama"
-	}
 	if _, err := url.ParseRequestURI(baseURL); err != nil {
 		res.Message = "测试失败"
 		res.Error = fmt.Sprintf("API Base URL 无效: %v", err)
@@ -419,9 +415,11 @@ func (a *App) probeProvider(baseURL, apiKey string) ConnectionTestResult {
 		res.Error = err.Error()
 		return res
 	}
-	req.Header.Set("Authorization", "Bearer "+apiKey)
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		req.Header.Set("api-key", apiKey)
+	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("api-key", apiKey)
 
 	client := newHTTPClient(30 * time.Second)
 	start := time.Now()

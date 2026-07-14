@@ -28,6 +28,7 @@ import {
   GetUsageStats,
   ClearUsageStats,
   GetProviderPackageStatuses,
+  CheckForUpdate,
   ListModelGroups,
   SetAppProxyModel,
   SetModelGroupRoutePriority,
@@ -36,6 +37,7 @@ import {
   InjectGateway,
   RollbackGateway,
 } from "../wailsjs/go/main/App";
+import { BrowserOpenURL } from "../wailsjs/runtime/runtime";
 
 /** @typedef {{ id: string, name: string, baseUrl: string, apiKey: string, color: string, models: Model[] }} Provider */
 /** @typedef {{ id: string, name: string, enabled: boolean, isDefault: boolean, ownedBy?: string }} Model */
@@ -100,7 +102,7 @@ function confirmAction(message, title = "") {
  * }>}
  */
 const PRESETS = [
-  { id: "ollama", name: "Ollama", baseUrl: "http://127.0.0.1:11434/v1", color: "#c4c4c4", useProxy: false, formatStandard: "openai", apiKey: "ollama", keyRequired: false, local: true, region: "local", blurbKey: "preset.blurb.local" },
+  { id: "ollama", name: "Ollama", baseUrl: "http://127.0.0.1:11434/v1", color: "#c4c4c4", useProxy: false, formatStandard: "openai", apiKey: "", keyRequired: false, local: true, region: "local", blurbKey: "preset.blurb.local" },
   { id: "deepseek", name: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", color: "#3fb950", useProxy: true, formatStandard: "openai", keyRequired: true, region: "cn", blurbKey: "preset.blurb.deepseek" },
   { id: "siliconflow", nameKey: "preset.siliconflow", name: "硅基流动", baseUrl: "https://api.siliconflow.cn/v1", color: "#7c5cff", useProxy: true, formatStandard: "openai", keyRequired: true, region: "cn", blurbKey: "preset.blurb.silicon" },
   { id: "openai", name: "OpenAI", baseUrl: "https://api.openai.com/v1", color: "#3d8bfd", useProxy: true, formatStandard: "openai", keyRequired: true, region: "global" },
@@ -140,6 +142,7 @@ function slugifyClient(s) {
 
 const STORAGE_KEY = "codex.providers.v1";
 const PAGE_KEY = "codex.ui.page";
+const UPDATE_DISMISSED_KEY = "aigateway.update.dismissedVersion";
 
 /** @type {Provider[]} */
 let providers = [];
@@ -152,6 +155,9 @@ let testing = false;
 let testResult = null;
 let modelQuery = "";
 let booting = true;
+/** @type {null | { currentVersion?: string, latestVersion?: string, latestName?: string, releaseUrl?: string, hasUpdate?: boolean, error?: string }} */
+let updateInfo = null;
+let updateChecking = false;
 /** @type {'providers'|'models'|'apps'|'configs'|'proxy'|'usage'} */
 let page = (() => {
   const raw = localStorage.getItem(PAGE_KEY) || "";
@@ -430,6 +436,54 @@ function isProxyEntryModel(id) {
   return /^aiSwitchModel(?:-|$)/i.test(String(id || "").trim());
 }
 
+async function loadUpdateInfo() {
+  if (!hasBackend() || typeof window.go?.main?.App?.CheckForUpdate !== "function" || updateChecking) return;
+  updateChecking = true;
+  try {
+    updateInfo = await CheckForUpdate();
+  } catch (e) {
+    updateInfo = {
+      currentVersion: updateInfo?.currentVersion || "",
+      latestVersion: updateInfo?.latestVersion || "",
+      hasUpdate: false,
+      error: errMsg(e),
+    };
+  } finally {
+    updateChecking = false;
+    render();
+  }
+}
+
+function shouldShowUpdatePrompt() {
+  const latest = updateInfo?.latestVersion || "";
+  if (!updateInfo?.hasUpdate || !latest) return false;
+  try {
+    return localStorage.getItem(UPDATE_DISMISSED_KEY) !== latest;
+  } catch (_) {
+    return true;
+  }
+}
+
+function renderUpdatePrompt() {
+  if (!updateInfo) return "";
+  const current = updateInfo.currentVersion || "";
+  const latest = updateInfo.latestVersion || "";
+  if (shouldShowUpdatePrompt()) {
+    return `
+      <span class="upgrade-pill" title="${escapeAttr(t("update.availableTitle", { version: latest }))}">
+        <button type="button" class="upgrade-link" id="btn-open-release">
+          ${t("update.available", { current: current || t("common.current"), latest })}
+        </button>
+        <button type="button" class="upgrade-dismiss" id="btn-dismiss-update" title="${escapeAttr(t("update.dismiss"))}" aria-label="${escapeAttr(t("update.dismiss"))}">×</button>
+      </span>
+    `;
+  }
+  if (current) {
+    return `<span class="stat-pill" title="${escapeAttr(t("update.currentTitle"))}">v${escapeHtml(current)}</span>`;
+  }
+  return "";
+}
+
 function modelChoicesFor(kind) {
   /** @type {{id:string,name:string,provider:string,group:string}[]} */
   const list = [];
@@ -586,6 +640,7 @@ function render() {
         </nav>
       </div>
       <div class="topbar-meta">
+        ${renderUpdatePrompt()}
         <div class="lang-picker" id="lang-picker">
           <button type="button" class="lang-picker-btn" id="lang-picker-btn" title="${escapeAttr(t("lang.switch"))}" aria-haspopup="listbox" aria-expanded="false">
             <span class="lang-picker-icon">🌐</span>
@@ -1681,6 +1736,22 @@ function bindShellEvents() {
       setLocale(next);
       render();
     });
+  });
+  document.getElementById("btn-open-release")?.addEventListener("click", () => {
+    const url = updateInfo?.releaseUrl || "https://github.com/vincent1986/AIGateway/releases";
+    try {
+      BrowserOpenURL(url);
+    } catch (_) {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+  });
+  document.getElementById("btn-dismiss-update")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const latest = updateInfo?.latestVersion || "";
+    try {
+      if (latest) localStorage.setItem(UPDATE_DISMISSED_KEY, latest);
+    } catch (_) {}
+    render();
   });
 }
 
@@ -2926,7 +2997,6 @@ function openAddModal() {
     const formatStandard = document.getElementById("m-format-pass")?.checked ? "passthrough" : "openai";
     const stableId = presetStableId(preset);
 
-    if (preset.local && !apiKey) apiKey = preset.apiKey || "ollama";
     if (!preset.local && preset.keyRequired !== false && !apiKey) {
       return toast(t("toast.needKeyCloud"), "err");
     }
@@ -2979,6 +3049,7 @@ function openAddModal() {
   await loadPackageStatuses();
   booting = false;
   render();
+  loadUpdateInfo();
   startProxyAlertMonitor();
   if (page === "apps" || page === "configs") {
     loadToolConfigs(false);

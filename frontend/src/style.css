@@ -243,6 +243,51 @@ button {
   font-weight: 600;
 }
 
+.upgrade-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid rgba(210, 153, 34, 0.45);
+  border-radius: 999px;
+  background: rgba(210, 153, 34, 0.12);
+  color: #f0c674;
+  overflow: hidden;
+  max-width: 260px;
+}
+
+.upgrade-link,
+.upgrade-dismiss {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  line-height: 1.2;
+}
+
+.upgrade-link {
+  padding: 5px 8px 5px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upgrade-link:hover {
+  background: rgba(210, 153, 34, 0.14);
+}
+
+.upgrade-dismiss {
+  width: 24px;
+  align-self: stretch;
+  border-left: 1px solid rgba(210, 153, 34, 0.28);
+  color: var(--text-secondary);
+}
+
+.upgrade-dismiss:hover {
+  color: var(--text);
+  background: rgba(210, 153, 34, 0.16);
+}
+
 /* ─── Body layout ─── */
 /* flex-basis: 0 forces shrink below content size so scroll regions activate */
 .layout {

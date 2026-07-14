@@ -12,6 +12,8 @@ export function ApplyToolModel(arg1:main.ModelApplyRequest):Promise<main.ToolCon
 
 export function BackupDefaultConfig(arg1:string,arg2:string):Promise<main.ToolConfigStatus>;
 
+export function CheckForUpdate():Promise<main.VersionUpgradeInfo>;
+
 export function ClearDefaultBackup(arg1:string):Promise<main.ToolConfigStatus>;
 
 export function ClearToolConfigPath(arg1:string):Promise<main.ToolConfigStatus>;

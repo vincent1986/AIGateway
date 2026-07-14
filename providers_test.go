@@ -141,13 +141,17 @@ func TestDeleteLastProviderDoesNotReseedOllama(t *testing.T) {
 
 func TestFetchOllamaAllowsEmptyKey(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Fatalf("unexpected auth header: %q", got)
+		}
+		if got := r.Header.Get("api-key"); got != "" {
+			t.Fatalf("unexpected api-key header: %q", got)
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": []map[string]string{{"id": "llama3.2", "owned_by": "ollama"}},
 		})
 	}))
 	defer srv.Close()
-	// Pretend local by using 127.0.0.1 in URL — replace host
-	// httptest URL is 127.0.0.1 already
 	a := NewApp()
 	items, err := a.FetchProviderModels(srv.URL+"/v1", "")
 	if err != nil {
