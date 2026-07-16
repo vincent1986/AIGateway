@@ -91,6 +91,8 @@ func appProxyModel(kind ToolKind) string {
 		return "aiSwitchModel-openclaw"
 	case ToolHarness:
 		return "aiSwitchModel-harness"
+	case ToolGrok:
+		return "aiSwitchModel-grok"
 	default:
 		return "aiSwitchModel"
 	}

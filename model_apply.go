@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+
+	"github.com/pelletier/go-toml/v2"
 )
 
 // ModelApplyRequest is the full payload for switching models on Codex / Claude Code.
@@ -29,7 +31,7 @@ func (a *App) ApplyToolModel(req ModelApplyRequest) (ToolConfigStatus, error) {
 	if model == "" {
 		return ToolConfigStatus{}, fmt.Errorf("模型不能为空")
 	}
-	if k != ToolCodex && k != ToolClaude && k != ToolOpenClaw && k != ToolHarness {
+	if k != ToolCodex && k != ToolClaude && k != ToolOpenClaw && k != ToolHarness && k != ToolGrok {
 		return ToolConfigStatus{}, fmt.Errorf("未知工具类型: %s", req.Kind)
 	}
 	driverID := string(k)
@@ -155,7 +157,7 @@ func (a *App) ApplyToolModel(req ModelApplyRequest) (ToolConfigStatus, error) {
 			return ToolConfigStatus{}, applyErr
 		}
 		next = string(applied)
-	case ToolOpenClaw, ToolHarness:
+	case ToolOpenClaw, ToolHarness, ToolGrok:
 		providerID = sanitizeGenericProviderID(providerID, baseURL, displayName)
 		writeBase := baseURL
 		if providerIDWantsProxy(providerID, displayName, baseURL) {
@@ -213,6 +215,113 @@ func sanitizeGenericProviderID(providerID, baseURL, displayName string) string {
 		providerID = gatewayProviderID
 	}
 	return slugify(providerID)
+}
+
+func applyGrokTOML(content, baseURL, apiKey, model, providerID, name string) string {
+	if strings.TrimSpace(content) == "" {
+		content = "# AIGateway managed\n"
+	}
+	if apiKey == "" {
+		apiKey = "aigateway"
+	}
+	if providerID == "" {
+		providerID = gatewayProviderID
+	}
+	if name == "" {
+		name = "AIGateway"
+	}
+	content = removeTomlProviderBlock(content, providerID)
+	content = upsertGrokModelsDefault(content, model)
+	content = upsertGrokModelBlock(content, model, model, baseURL, name, providerEnvVarName(providerID, name), apiKey)
+	return content
+}
+
+func readGrokModelConfig(content string) (model, provider string) {
+	var raw map[string]any
+	if err := toml.Unmarshal([]byte(content), &raw); err != nil {
+		return "", ""
+	}
+	if models, _ := raw["models"].(map[string]any); models != nil {
+		if v, _ := models["default"].(string); v != "" {
+			model = v
+		}
+	}
+	modelsByAlias, _ := raw["model"].(map[string]any)
+	if model != "" && modelsByAlias != nil {
+		if cfg, _ := modelsByAlias[model].(map[string]any); cfg != nil {
+			if v, _ := cfg["model"].(string); v != "" {
+				provider = v
+			}
+			if v, _ := cfg["base_url"].(string); v != "" {
+				provider = v
+			}
+		}
+	}
+	return model, provider
+}
+
+func upsertGrokModelsDefault(content, alias string) string {
+	reHeader := regexp.MustCompile(`(?m)^\[models\]\s*$`)
+	loc := reHeader.FindStringIndex(content)
+	if loc == nil {
+		block := "[models]\ndefault = \"" + escapeTomlString(alias) + "\"\n"
+		if strings.TrimSpace(content) == "" {
+			return block
+		}
+		if !strings.HasSuffix(content, "\n") {
+			content += "\n"
+		}
+		return content + "\n" + block
+	}
+	start := loc[0]
+	end := findTomlTableEnd(content, loc[1])
+	block := content[start:end]
+	block = setTomlBlockString(block, "default", alias)
+	return content[:start] + block + content[end:]
+}
+
+func upsertGrokModelBlock(content, alias, backendModel, baseURL, name, envKey, apiKey string) string {
+	alias = strings.TrimSpace(alias)
+	if alias == "" {
+		return content
+	}
+	reHeader := regexp.MustCompile(`(?m)^\[model\.(?:"` + regexp.QuoteMeta(escapeTomlString(alias)) + `"|` + regexp.QuoteMeta(alias) + `)\]\s*$`)
+	loc := reHeader.FindStringIndex(content)
+	block := `[model."` + escapeTomlString(alias) + "\"]\n"
+	if loc != nil {
+		start := loc[0]
+		end := findTomlTableEnd(content, loc[1])
+		block = content[start:end]
+		content = content[:start] + content[end:]
+	}
+	block = setTomlBlockString(block, "model", backendModel)
+	if baseURL != "" {
+		block = setTomlBlockString(block, "base_url", baseURL)
+	}
+	if name != "" {
+		block = setTomlBlockString(block, "name", name)
+	}
+	if envKey != "" {
+		block = setTomlBlockString(block, "env_key", envKey)
+	}
+	if apiKey != "" {
+		block = setTomlBlockString(block, "api_key", apiKey)
+	}
+	if !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	return strings.TrimRight(content, "\n") + "\n\n" + strings.TrimSpace(block) + "\n"
+}
+
+func setTomlBlockString(block, key, value string) string {
+	re := regexp.MustCompile(`(?m)^(\s*)` + regexp.QuoteMeta(key) + `\s*=\s*"[^"]*"`)
+	if re.MatchString(block) {
+		return re.ReplaceAllString(block, `${1}`+key+` = "`+escapeTomlString(value)+`"`)
+	}
+	if !strings.HasSuffix(block, "\n") {
+		block += "\n"
+	}
+	return block + key + ` = "` + escapeTomlString(value) + "\"\n"
 }
 
 func injectGenericModelGateway(configPath, baseURL, apiKey, model, providerID string) error {

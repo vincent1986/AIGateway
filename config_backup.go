@@ -117,6 +117,7 @@ func saveTakeoverBackup(kind ToolKind, originalPath string) error {
 		if _, ok := loadTakeoverMeta(kind, originalPath); ok {
 			return nil
 		}
+		return fmt.Errorf("已检测到接管状态，但缺少接管备份元数据，请先还原后再重新接管")
 	}
 	if err := os.MkdirAll(backupDir(kind), 0o700); err != nil {
 		return err
@@ -149,6 +150,19 @@ func saveTakeoverBackup(kind ToolKind, originalPath string) error {
 		return err
 	}
 	return os.WriteFile(takeoverMetaFile(kind, originalPath), b, 0o600)
+}
+
+func cleanupTakeoverBackup(kind ToolKind, originalPath string) {
+	originalPath = expandPath(originalPath)
+	if originalPath == "" {
+		return
+	}
+	metaPath := takeoverMetaFile(kind, originalPath)
+	bakPath := takeoverBackupFile(kind, originalPath)
+	envPath := takeoverEnvironmentBackupPath(kind, originalPath)
+	_ = os.Remove(metaPath)
+	_ = os.Remove(bakPath)
+	_ = os.Remove(envPath)
 }
 
 func loadTakeoverMeta(kind ToolKind, originalPath string) (takeoverMeta, bool) {
@@ -513,7 +527,7 @@ func savePreWriteSnapshot(kind ToolKind, path string, content []byte) {
 
 func isKnownToolKind(k ToolKind) bool {
 	switch k {
-	case ToolCodex, ToolClaude, ToolOpenClaw, ToolHarness:
+	case ToolCodex, ToolClaude, ToolOpenClaw, ToolHarness, ToolGrok:
 		return true
 	default:
 		return false
@@ -575,6 +589,7 @@ func (a *App) restoreTakeoverConfig(kind ToolKind) (ToolConfigStatus, error) {
 		if _, err := a.ClearToolConfigPath(string(kind)); err != nil {
 			a.appLogf("rollback clear path override failed kind=%q err=%v", kind, err)
 		}
+		cleanupTakeoverBackup(kind, target)
 		st = a.resolveTool(kind)
 		st.Message = "已解除接管，已还原接管前状态（原配置不存在，已删除接管创建的文件）"
 		return st, nil
@@ -631,6 +646,7 @@ func (a *App) restoreTakeoverConfig(kind ToolKind) (ToolConfigStatus, error) {
 	if _, err := a.SetToolConfigPath(string(kind), target); err != nil {
 		a.appLogf("rollback save path override failed kind=%q target=%q err=%v", kind, target, err)
 	}
+	cleanupTakeoverBackup(kind, target)
 	st = a.resolveTool(kind)
 	st.Message = "已解除接管，已还原接管前配置"
 	return st, nil

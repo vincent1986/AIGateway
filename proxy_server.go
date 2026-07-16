@@ -359,7 +359,7 @@ func (p *proxyServer) handleModels(w http.ResponseWriter, r *http.Request) {
 	// Expose stable application aliases as routable models. Claude Code and
 	// other clients may validate the selected model through GET /v1/models
 	// before sending the actual request.
-	for _, kind := range []ToolKind{ToolCodex, ToolClaude, ToolOpenClaw, ToolHarness} {
+	for _, kind := range []ToolKind{ToolCodex, ToolClaude, ToolOpenClaw, ToolHarness, ToolGrok} {
 		alias := appProxyModel(kind)
 		if loadProxyAlias(alias) == "" || seen[alias] {
 			continue

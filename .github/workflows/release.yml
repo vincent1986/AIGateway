@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       upload_release:
-        description: "Upload artifacts to GitHub Release tag (e.g. v2.0.1)"
+        description: "Upload artifacts to GitHub Release tag (e.g. v2.0.4)"
         required: false
-        default: "v2.0.1"
+        default: "v2.0.4"
 
 permissions:
   contents: write

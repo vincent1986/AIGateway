@@ -323,6 +323,16 @@ func defaultDirForKind(kind ToolKind) string {
 				return p
 			}
 		}
+	case ToolGrok:
+		if v := strings.TrimSpace(os.Getenv("GROK_CONFIG_DIR")); v != "" {
+			return expandPath(v)
+		}
+		if home != "" {
+			p := filepath.Join(home, ".grok")
+			if st, err := os.Stat(p); err == nil && st.IsDir() {
+				return p
+			}
+		}
 	}
 	return home
 }

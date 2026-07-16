@@ -16,7 +16,7 @@
 
 - **ChatGPT** / **Codex** and OpenAI-compatible clients  
 - **Claude** / **Claude Code**  
-- **OpenClaw**, **Harness**, and similar toolchains  
+- **OpenClaw**, **Harness**, **Grok CLI**, and similar toolchains  
 - Any app that speaks **OpenAI-compatible APIs**
 
 ### What you get
@@ -32,7 +32,7 @@
 
 - **Providers / Models / Apps / Gateway / Usage** — clear five-tab workspace  
 - **SQLite-backed gateway** — virtual model groups, priority failover, usage stats  
-- **One-click takeover** — ChatGPT, Claude Code, OpenClaw, Harness  
+- **One-click takeover** — ChatGPT, Claude Code, OpenClaw, Harness, Grok CLI  
 - **Preset library** — pick a vendor; most cloud providers need only an API key  
 - **OpenAI or Passthrough** format per provider  
 - **Multi-language UI** (popup): Simplified Chinese, Traditional Chinese, English, Japanese, Korean, German, Vietnamese, Thai  
@@ -52,7 +52,7 @@
 
 - **ChatGPT** / **Codex** 与 OpenAI 兼容客户端  
 - **Claude** / **Claude Code**  
-- **OpenClaw**、**Harness** 等工具链  
+- **OpenClaw**、**Harness**、**Grok CLI** 等工具链  
 - 其它使用 **OpenAI 兼容 API** 的应用  
 
 ### 你能得到什么
@@ -68,7 +68,7 @@
 
 - **厂家 / 模型 / 应用 / 统一入口 / Token 统计** 五栏结构  
 - **SQLite 网关**：虚拟模型组、优先级故障转移、用量统计  
-- **一键接管**：ChatGPT、Claude Code、OpenClaw、Harness  
+- **一键接管**：ChatGPT、Claude Code、OpenClaw、Harness、Grok CLI  
 - **预设库**：点选厂家，云端多数只需 API Key  
 - **OpenAI / 原样转发** 按厂家可选  
 - **多语言界面（弹窗）**：简中、繁中、英、日、韩、德、越、泰  

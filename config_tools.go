@@ -21,6 +21,7 @@ const (
 	ToolClaude   ToolKind = "claude"
 	ToolOpenClaw ToolKind = "openclaw"
 	ToolHarness  ToolKind = "harness"
+	ToolGrok     ToolKind = "grok"
 )
 
 // ModelOption is a model entry discovered from a tool config.
@@ -62,12 +63,16 @@ type pathOverrides struct {
 	Claude   string `json:"claude"`
 	OpenClaw string `json:"openclaw"`
 	Harness  string `json:"harness"`
+	Grok     string `json:"grok"`
 }
 
 func normalizeToolKind(kind string) ToolKind {
 	raw := strings.ToLower(strings.TrimSpace(kind))
 	if raw == "chatgpt" {
 		return ToolCodex
+	}
+	if raw == "grok-build" || raw == "grok_cli" {
+		return ToolGrok
 	}
 	return ToolKind(raw)
 }
@@ -168,6 +173,8 @@ func (a *App) resolveTool(kind ToolKind) ToolConfigStatus {
 		override = strings.TrimSpace(ov.OpenClaw)
 	case ToolHarness:
 		override = strings.TrimSpace(ov.Harness)
+	case ToolGrok:
+		override = strings.TrimSpace(ov.Grok)
 	}
 
 	if override != "" {
@@ -557,7 +564,7 @@ func setClaudeModel(content, model string) (string, error) {
 
 // PickToolConfig opens a file dialog to manually choose a config file.
 func (a *App) PickToolConfig(kind string) (ToolConfigStatus, error) {
-	k := ToolKind(strings.ToLower(strings.TrimSpace(kind)))
+	k := normalizeToolKind(kind)
 	title := "选择配置文件"
 	filters := []wailsruntime.FileFilter{}
 	defaultDir := defaultDirForKind(k)
@@ -588,6 +595,12 @@ func (a *App) PickToolConfig(kind string) (ToolConfigStatus, error) {
 		filters = []wailsruntime.FileFilter{
 			{DisplayName: "YAML (*.yaml;*.yml)", Pattern: "*.yaml;*.yml"},
 			{DisplayName: "JSON (*.json)", Pattern: "*.json"},
+			{DisplayName: "All files (*.*)", Pattern: "*.*"},
+		}
+	case ToolGrok:
+		title = "选择 Grok CLI 配置文件 (config.toml)"
+		filters = []wailsruntime.FileFilter{
+			{DisplayName: "TOML (*.toml)", Pattern: "*.toml"},
 			{DisplayName: "All files (*.*)", Pattern: "*.*"},
 		}
 	default:
@@ -633,6 +646,8 @@ func (a *App) SetToolConfigPath(kind, path string) (ToolConfigStatus, error) {
 		ov.OpenClaw = path
 	case ToolHarness:
 		ov.Harness = path
+	case ToolGrok:
+		ov.Grok = path
 	default:
 		return ToolConfigStatus{}, fmt.Errorf("未知工具类型: %s", kind)
 	}
@@ -656,6 +671,8 @@ func (a *App) ClearToolConfigPath(kind string) (ToolConfigStatus, error) {
 		ov.OpenClaw = ""
 	case ToolHarness:
 		ov.Harness = ""
+	case ToolGrok:
+		ov.Grok = ""
 	default:
 		return ToolConfigStatus{}, fmt.Errorf("未知工具类型: %s", kind)
 	}

@@ -25,7 +25,7 @@ func TestInjectJSONBaseURL(t *testing.T) {
 }
 
 func TestDriverRegistry(t *testing.T) {
-	for _, id := range []string{"chatgpt", "claude", "openclaw", "harness", "codex"} {
+	for _, id := range []string{"chatgpt", "claude", "openclaw", "harness", "grok", "codex"} {
 		if driverByID(id) == nil {
 			t.Fatalf("missing driver %s", id)
 		}
@@ -65,6 +65,18 @@ func TestDriverConfigAdaptersInspectAndValidate(t *testing.T) {
 			path:    "config.yaml",
 			content: "model: m4\nprovider: aigateway\n",
 			model:   "m4",
+		},
+		{
+			id:      "grok",
+			path:    "config.toml",
+			content: "[model.my-local-model]\nmodel = \"m5\"\nbase_url = \"http://127.0.0.1:8000/v1\"\nname = \"Local\"\n\n[models]\ndefault = \"my-local-model\"\n",
+			model:   "my-local-model",
+		},
+		{
+			id:      "grok",
+			path:    "config.toml",
+			content: "[model.\"gpt-4.1\"]\nmodel = \"gpt-4.1\"\nbase_url = \"http://127.0.0.1:8000/v1\"\n\n[models]\ndefault = \"gpt-4.1\"\n",
+			model:   "gpt-4.1",
 		},
 	}
 	for _, tc := range cases {
@@ -143,6 +155,21 @@ func TestDriverApplyModelUsesFormatSpecificAdapters(t *testing.T) {
 				}
 			},
 		},
+		{
+			id:      "grok",
+			path:    "config.toml",
+			initial: "[model.old]\nmodel = \"old-backend\"\nbase_url = \"http://old/v1\"\n\n[models]\ndefault = \"old\"\n",
+			req:     ModelInjection{Model: "m5", Provider: "aigateway", BaseURL: "http://127.0.0.1:18080/v1"},
+			check: func(t *testing.T, out []byte) {
+				model, provider := readGrokModelConfig(string(out))
+				if model != "m5" || provider != "http://127.0.0.1:18080/v1" {
+					t.Fatalf("model=%q provider=%q output=%s", model, provider, out)
+				}
+				if !strings.Contains(string(out), `[model."m5"]`) || !strings.Contains(string(out), `[models]`) {
+					t.Fatalf("missing official Grok schema: %s", out)
+				}
+			},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.id, func(t *testing.T) {
@@ -153,6 +180,25 @@ func TestDriverApplyModelUsesFormatSpecificAdapters(t *testing.T) {
 			}
 			tc.check(t, out)
 		})
+	}
+}
+
+func TestGrokDriverInjectGateway(t *testing.T) {
+	tmp := t.TempDir()
+	p := filepath.Join(tmp, "config.toml")
+	if err := (&grokDriver{}).InjectGateway(p, "http://127.0.0.1:18080/v1", ""); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model, provider := readGrokModelConfig(string(b))
+	if model != appProxyModel(ToolGrok) || provider != "http://127.0.0.1:18080/v1" {
+		t.Fatalf("model=%q provider=%q output=%s", model, provider, b)
+	}
+	if !strings.Contains(string(b), `[model."`+appProxyModel(ToolGrok)+`"]`) || !strings.Contains(string(b), `[models]`) || strings.Contains(string(b), "[model_providers.aigateway]") {
+		t.Fatalf("missing OpenAI-compatible provider block: %s", b)
 	}
 }
 

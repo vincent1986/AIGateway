@@ -43,6 +43,14 @@ func (a *App) InjectGateway(kind string) (ToolConfigStatus, error) {
 	if path == "" {
 		return st, fmt.Errorf("未找到配置路径，请先手动选择")
 	}
+	if st.Managed {
+		if st.HasTakeoverBackup {
+			st.Message = "当前配置已接管，请直接使用卸载/还原"
+		} else {
+			st.Message = "当前配置已处于接管状态，但缺少接管备份元数据；请先还原或清理后再接管"
+		}
+		return st, fmt.Errorf("当前配置已接管，不能重复接管")
+	}
 
 	var raw []byte
 	if err := saveTakeoverBackup(k, path); err != nil {
@@ -106,6 +114,10 @@ func (a *App) InjectGateway(kind string) (ToolConfigStatus, error) {
 	case ToolHarness:
 		if strings.TrimSpace(ov.Harness) == "" {
 			ov.Harness = path
+		}
+	case ToolGrok:
+		if strings.TrimSpace(ov.Grok) == "" {
+			ov.Grok = path
 		}
 	}
 	_ = a.saveOverrides(ov)

@@ -106,6 +106,7 @@ var toolRegistry = []ToolDriver{
 	&claudeDriver{},
 	&openclawDriver{},
 	&harnessDriver{},
+	&grokDriver{},
 }
 
 func driverByID(id string) ToolDriver {
@@ -132,6 +133,8 @@ func toolKindFromDriverID(id string) ToolKind {
 		return ToolOpenClaw
 	case "harness":
 		return ToolHarness
+	case "grok", "grok_cli", "grok-build":
+		return ToolGrok
 	default:
 		return ToolKind(id)
 	}
@@ -240,7 +243,7 @@ func (d *claudeDriver) IsManaged(configPath string) bool {
 		return false
 	}
 	s := string(b)
-	return strings.Contains(s, "127.0.0.1:18080") || strings.Contains(s, "aigateway")
+	return strings.Contains(s, "127.0.0.1:") || strings.Contains(s, "localhost:") || strings.Contains(s, "aigateway")
 }
 
 // --- OpenClaw ---
@@ -300,7 +303,7 @@ func (d *openclawDriver) InjectGateway(configPath, gatewayURL, apiKey string) er
 	return injectOpenClawGateway(configPath, gatewayURL, apiKey, appProxyModel(ToolOpenClaw), gatewayProviderID)
 }
 func (d *openclawDriver) IsManaged(configPath string) bool {
-	return fileContainsAny(configPath, "127.0.0.1:18080", "aigateway")
+	return fileContainsAny(configPath, "127.0.0.1:", "localhost:", "aigateway")
 }
 
 // unmarshalOpenClawJSON5 accepts the JSON5 forms used by OpenClaw. The
@@ -429,7 +432,82 @@ func (d *harnessDriver) InjectGateway(configPath, gatewayURL, apiKey string) err
 	return injectGenericModelGateway(configPath, gatewayURL, apiKey, appProxyModel(ToolHarness), gatewayProviderID)
 }
 func (d *harnessDriver) IsManaged(configPath string) bool {
-	return fileContainsAny(configPath, "127.0.0.1:18080", "aigateway")
+	return fileContainsAny(configPath, "127.0.0.1:", "localhost:", "aigateway")
+}
+
+// --- Grok CLI ---
+
+type grokDriver struct{}
+
+func (d *grokDriver) ToolID() string     { return "grok" }
+func (d *grokDriver) ToolName() string   { return "Grok CLI" }
+func (d *grokDriver) ConfigType() string { return "toml" }
+func (d *grokDriver) DetectConfig(path string) (ConfigState, error) {
+	return detectToolConfig(d, path)
+}
+func (d *grokDriver) InspectConfig(content []byte, path string) (ToolConfigView, error) {
+	var doc map[string]any
+	if err := toml.Unmarshal(content, &doc); err != nil {
+		return ToolConfigView{}, fmt.Errorf("Grok CLI TOML 解析失败: %w", err)
+	}
+	s := string(content)
+	model, provider := readGrokModelConfig(s)
+	return ToolConfigView{Model: model, ModelProvider: provider}, nil
+}
+func (d *grokDriver) ApplyModel(content []byte, path string, req ModelInjection) ([]byte, error) {
+	next := applyGrokTOML(string(content), req.BaseURL, req.APIKey, req.Model, req.Provider, req.Name)
+	return []byte(next), nil
+}
+func (d *grokDriver) ValidateConfig(path string, expected ExpectedConfig) error {
+	return validateToolConfig(d, path, expected)
+}
+func (d *grokDriver) ValidateConfigContent(content []byte, path string, expected ExpectedConfig) error {
+	return validateToolConfigContentWithDriver(d, content, path, expected)
+}
+func (d *grokDriver) DefaultPaths() []string {
+	home := userHome()
+	var paths []string
+	if v := strings.TrimSpace(os.Getenv("GROK_CONFIG_DIR")); v != "" {
+		base := expandPath(v)
+		paths = append(paths, filepath.Join(base, "config.toml"))
+	}
+	if home != "" {
+		paths = append(paths,
+			filepath.Join(home, ".grok", "config.toml"),
+			filepath.Join(home, ".config", "grok", "config.toml"),
+			filepath.Join(home, ".xai", "grok", "config.toml"),
+		)
+	}
+	if goruntime.GOOS == "darwin" && home != "" {
+		paths = append(paths, filepath.Join(home, "Library", "Application Support", "Grok", "config.toml"))
+	}
+	if cwd, err := os.Getwd(); err == nil && cwd != "" {
+		paths = append(paths, filepath.Join(cwd, ".grok", "config.toml"))
+	}
+	return uniquePaths(paths)
+}
+func (d *grokDriver) PreferredPath() string {
+	if v := strings.TrimSpace(os.Getenv("GROK_CONFIG_DIR")); v != "" {
+		return filepath.Join(expandPath(v), "config.toml")
+	}
+	if home := userHome(); home != "" {
+		return filepath.Join(home, ".grok", "config.toml")
+	}
+	return "grok-config.toml"
+}
+func (d *grokDriver) InjectGateway(configPath, gatewayURL, apiKey string) error {
+	raw, err := os.ReadFile(configPath)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	next := applyGrokTOML(string(raw), gatewayURL, apiKey, appProxyModel(ToolGrok), gatewayProviderID, "AIGateway")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		return err
+	}
+	return writeFileAtomic(configPath, next)
+}
+func (d *grokDriver) IsManaged(configPath string) bool {
+	return fileContainsAny(configPath, "127.0.0.1:", "localhost:", "aigateway")
 }
 
 func injectJSONBaseURL(configPath, gatewayURL, apiKey string) error {
@@ -527,7 +605,7 @@ func renderOpenClawGateway(raw []byte, gatewayURL, apiKey, model, providerID str
 	// OpenClaw sessions can retain a model alias from another app. Declare
 	// configured aliases as well, so OpenClaw does not reject the request
 	// before it reaches AIGateway's alias router.
-	for _, kind := range []ToolKind{ToolCodex, ToolClaude, ToolOpenClaw, ToolHarness} {
+	for _, kind := range []ToolKind{ToolCodex, ToolClaude, ToolOpenClaw, ToolHarness, ToolGrok} {
 		alias := appProxyModel(kind)
 		if alias != model && loadProxyAlias(alias) != "" {
 			modelIDs = append(modelIDs, alias)

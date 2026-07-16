@@ -44,6 +44,13 @@ import { BrowserOpenURL } from "../wailsjs/runtime/runtime";
 /** @typedef {{ kind: string, name: string, path: string, found: boolean, exists: boolean, model: string, modelProvider: string, proxyModel?: string, proxyTargetModel?: string, searchPaths: string[], candidates: {id:string,name:string,provider:string}[], source: string, message: string, managed?: boolean, hasDefaultBackup?: boolean, defaultBackupAt?: string }} ToolConfigStatus */
 
 const COLORS = ["#3d8bfd", "#7c5cff", "#3fb950", "#d29922", "#f85149", "#39c5cf", "#e85d9a", "#3859ff", "#a371f7"];
+const TOOL_APPS = [
+  ["codex", "ChatGPT"],
+  ["claude", "Claude Code"],
+  ["openclaw", "OpenClaw"],
+  ["harness", "Harness"],
+  ["grok", "Grok CLI"],
+];
 
 function appDebugLog(message) {
   try {
@@ -176,6 +183,7 @@ let modelsBusy = "";
 let usageStats = null;
 let usageBusy = false;
 let usageRefreshTimer = null;
+let usageStatsSignature = "";
 /** @type {Record<string, any>} providerId → package status */
 let packageStatusById = {};
 
@@ -356,6 +364,87 @@ function providerPackageStatus(p) {
     expired: false,
     expireAt: active.expireAt || "",
   };
+}
+
+function usageNumber(n) {
+  return Number(n || 0).toLocaleString(localeBcp47());
+}
+
+function usageBucketRow(b) {
+  const key = b.key ?? b.Key ?? "";
+  const c = b.calls ?? b.Calls ?? 0;
+  const i = b.inputTokens ?? b.InputTokens ?? 0;
+  const o = b.outputTokens ?? b.OutputTokens ?? 0;
+  const sum = b.totalTokens ?? b.TotalTokens ?? 0;
+  return `<tr>
+    <td class="model-id">${escapeHtml(key)}</td>
+    <td>${c}</td>
+    <td>${usageNumber(i)}</td>
+    <td>${usageNumber(o)}</td>
+    <td><strong>${usageNumber(sum)}</strong></td>
+  </tr>`;
+}
+
+function usageRecentRow(e) {
+  const time = (e.time || e.Time || "").replace("T", " ").slice(0, 19);
+  return `<tr>
+    <td class="model-id">${escapeHtml(time)}</td>
+    <td>${escapeHtml(e.provider || e.Provider || "")}</td>
+    <td class="model-id">${escapeHtml(e.model || e.Model || "")}</td>
+    <td>${escapeHtml(e.endpoint || e.Endpoint || "")}</td>
+    <td>${e.inputTokens ?? e.InputTokens ?? 0}</td>
+    <td>${e.outputTokens ?? e.OutputTokens ?? 0}</td>
+    <td><strong>${e.totalTokens ?? e.TotalTokens ?? 0}</strong></td>
+  </tr>`;
+}
+
+function usageRefreshButtonHtml() {
+  return usageBusy ? `<span class="spinner"></span>${t("usage.refresh")}` : t("usage.refresh");
+}
+
+function usageStatsChanged(next) {
+  const sig = JSON.stringify(next || null);
+  const changed = sig !== usageStatsSignature;
+  usageStatsSignature = sig;
+  return changed;
+}
+
+function syncUsageToolbarState() {
+  const refreshBtn = document.getElementById("btn-usage-refresh");
+  const clearBtn = document.getElementById("btn-usage-clear");
+  if (refreshBtn) {
+    refreshBtn.disabled = usageBusy;
+    refreshBtn.innerHTML = usageRefreshButtonHtml();
+  }
+  if (clearBtn) clearBtn.disabled = usageBusy;
+}
+
+function syncUsagePageDom() {
+  if (page !== "usage") return;
+  const st = usageStats || {};
+  const tot = st.total || st.Total || {};
+  const byModel = st.byModel || st.ByModel || [];
+  const byProvider = st.byProvider || st.ByProvider || [];
+  const byDay = st.byDay || st.ByDay || [];
+  const recent = st.recent || st.Recent || [];
+  const setText = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  };
+
+  setText("usage-calls", usageNumber(tot.calls ?? tot.Calls ?? 0));
+  setText("usage-input", usageNumber(tot.inputTokens ?? tot.InputTokens ?? 0));
+  setText("usage-output", usageNumber(tot.outputTokens ?? tot.OutputTokens ?? 0));
+  setText("usage-total", usageNumber(tot.totalTokens ?? tot.TotalTokens ?? 0));
+
+  const byModelBody = document.getElementById("usage-by-model-body");
+  if (byModelBody) byModelBody.innerHTML = byModel.length ? byModel.map(usageBucketRow).join("") : `<tr><td colspan="5">${t("usage.noData")}</td></tr>`;
+  const byProviderBody = document.getElementById("usage-by-provider-body");
+  if (byProviderBody) byProviderBody.innerHTML = byProvider.length ? byProvider.map(usageBucketRow).join("") : `<tr><td colspan="5">${t("usage.noData")}</td></tr>`;
+  const byDayBody = document.getElementById("usage-by-day-body");
+  if (byDayBody) byDayBody.innerHTML = byDay.length ? byDay.map(usageBucketRow).join("") : `<tr><td colspan="5">${t("usage.noData")}</td></tr>`;
+  const recentBody = document.getElementById("usage-recent-body");
+  if (recentBody) recentBody.innerHTML = recent.length ? recent.map(usageRecentRow).join("") : `<tr><td colspan="7">${t("usage.noRecent")}</td></tr>`;
 }
 
 async function loadPackageStatuses() {
@@ -866,10 +955,7 @@ function renderProvidersPage() {
 }
 
 function renderConfigsPage() {
-  const cards = ["codex", "claude", "openclaw", "harness"].map((k) => {
-    const names = { codex: "ChatGPT", claude: "Claude Code", openclaw: "OpenClaw", harness: "Harness" };
-    return toolConfigs[k] || placeholder(k, names[k] || k);
-  });
+  const cards = TOOL_APPS.map(([k, name]) => toolConfigs[k] || placeholder(k, name));
   return `
     <div class="full-page">
       <div class="config-page">
@@ -906,6 +992,7 @@ function renderAppCard(st) {
 	const kind = st.kind;
 	const busy = configsBusy === kind;
 	const ok = !!st.found && !!st.exists;
+	const managed = !!(st.managed || st.Managed);
 	const hasTakeoverBackup = !!(st.hasTakeoverBackup || st.HasTakeoverBackup);
 	const choices = modelChoicesFor(kind).filter((c) => !isProxyEntryModel(c.id));
   const selectedModelRaw = pendingModel[kind] ?? st.proxyTargetModel ?? st.ProxyTargetModel ?? "";
@@ -932,7 +1019,7 @@ function renderAppCard(st) {
         </div>
         <div class="hint">${t("apps.takeoverHint")}</div>
         <div class="actions" style="margin-top:10px;flex-wrap:wrap">
-          <button class="btn btn-primary" data-act="takeover" data-kind="${kind}" ${busy ? "disabled" : ""}>
+          <button class="btn btn-primary" data-act="takeover" data-kind="${kind}" ${busy || managed ? "disabled" : ""}>
             ${busy ? `<span class="spinner"></span>` : t("apps.takeover")}
           </button>
           <button class="btn" data-act="rollback-gw" data-kind="${kind}" ${busy || !hasTakeoverBackup ? "disabled" : ""}>
@@ -1551,7 +1638,7 @@ function renderDetail(p) {
                   <th>${t("detail.colId")}</th>
                   <th>${t("detail.colName")}</th>
                   <th>${t("detail.colStatus")}</th>
-                  <th style="width:120px;text-align:right">${t("detail.colActions")}</th>
+                  <th style="width:280px;text-align:right">${t("detail.colActions")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1568,6 +1655,10 @@ function renderDetail(p) {
                     </td>
                     <td>
                       <div class="row-actions">
+                        ${TOOL_APPS.map(
+                          ([kind, name]) =>
+                            `<button class="btn btn-sm" data-act="to-tool" data-kind="${escapeAttr(kind)}" title="${escapeAttr(name)}">${escapeHtml(name.replace(" Code", "").replace(" CLI", ""))}</button>`
+                        ).join("")}
                         <button class="btn btn-sm btn-ghost" data-act="remove">${t("detail.remove")}</button>
                       </div>
                     </td>
@@ -1686,7 +1777,7 @@ function bindShellEvents() {
         refreshProxyStatus();
       }
       if (page === "usage") {
-        loadUsageStats().then(() => render());
+        loadUsageStats().then(() => syncUsagePageDom());
       }
     });
   });
@@ -1927,21 +2018,6 @@ function renderUsagePage() {
   const byDay = usageStats?.byDay || usageStats?.ByDay || [];
   const recent = usageStats?.recent || usageStats?.Recent || [];
 
-  const rowBucket = (b) => {
-    const key = b.key ?? b.Key ?? "";
-    const c = b.calls ?? b.Calls ?? 0;
-    const i = b.inputTokens ?? b.InputTokens ?? 0;
-    const o = b.outputTokens ?? b.OutputTokens ?? 0;
-    const sum = b.totalTokens ?? b.TotalTokens ?? 0;
-    return `<tr>
-      <td class="model-id">${escapeHtml(key)}</td>
-      <td>${c}</td>
-      <td>${i.toLocaleString()}</td>
-      <td>${o.toLocaleString()}</td>
-      <td><strong>${sum.toLocaleString()}</strong></td>
-    </tr>`;
-  };
-
   return `
     <div class="full-page">
       <div class="config-page">
@@ -1951,7 +2027,7 @@ function renderUsagePage() {
             <p>${t("usage.desc")}</p>
           </div>
           <div class="actions">
-            <button class="btn" id="btn-usage-refresh" ${usageBusy ? "disabled" : ""}>${t("usage.refresh")}</button>
+            <button class="btn" id="btn-usage-refresh" ${usageBusy ? "disabled" : ""}>${usageRefreshButtonHtml()}</button>
             <button class="btn btn-ghost" id="btn-usage-clear" ${usageBusy ? "disabled" : ""}>${t("usage.clear")}</button>
           </div>
         </div>
@@ -1959,22 +2035,22 @@ function renderUsagePage() {
         <div class="config-grid" style="grid-template-columns:repeat(4,1fr)">
           <section class="config-card" style="min-height:auto">
             <div class="config-card-body">
-              <div class="kv"><label>${t("usage.calls")}</label><div class="value" style="font-size:22px;font-weight:700">${calls}</div></div>
+              <div class="kv"><label>${t("usage.calls")}</label><div class="value" id="usage-calls" style="font-size:22px;font-weight:700">${usageNumber(calls)}</div></div>
             </div>
           </section>
           <section class="config-card" style="min-height:auto">
             <div class="config-card-body">
-              <div class="kv"><label>${t("usage.input")}</label><div class="value" style="font-size:22px;font-weight:700">${Number(input).toLocaleString()}</div></div>
+              <div class="kv"><label>${t("usage.input")}</label><div class="value" id="usage-input" style="font-size:22px;font-weight:700">${usageNumber(input)}</div></div>
             </div>
           </section>
           <section class="config-card" style="min-height:auto">
             <div class="config-card-body">
-              <div class="kv"><label>${t("usage.output")}</label><div class="value" style="font-size:22px;font-weight:700">${Number(output).toLocaleString()}</div></div>
+              <div class="kv"><label>${t("usage.output")}</label><div class="value" id="usage-output" style="font-size:22px;font-weight:700">${usageNumber(output)}</div></div>
             </div>
           </section>
           <section class="config-card" style="min-height:auto">
             <div class="config-card-body">
-              <div class="kv"><label>${t("usage.total")}</label><div class="value" style="font-size:22px;font-weight:700;color:var(--accent)">${Number(totalTok).toLocaleString()}</div></div>
+              <div class="kv"><label>${t("usage.total")}</label><div class="value" id="usage-total" style="font-size:22px;font-weight:700;color:var(--accent)">${usageNumber(totalTok)}</div></div>
             </div>
           </section>
         </div>
@@ -1986,7 +2062,7 @@ function renderUsagePage() {
               <div class="model-table-wrap table-scroll">
                 <table class="model-table">
                   <thead><tr><th>${t("usage.colModel")}</th><th>${t("usage.colCalls")}</th><th>${t("usage.colInput")}</th><th>${t("usage.colOutput")}</th><th>${t("usage.colTotal")}</th></tr></thead>
-                  <tbody>${byModel.length ? byModel.map(rowBucket).join("") : `<tr><td colspan="5">${t("usage.noData")}</td></tr>`}</tbody>
+                  <tbody id="usage-by-model-body">${byModel.length ? byModel.map(usageBucketRow).join("") : `<tr><td colspan="5">${t("usage.noData")}</td></tr>`}</tbody>
                 </table>
               </div>
             </div>
@@ -1997,7 +2073,7 @@ function renderUsagePage() {
               <div class="model-table-wrap table-scroll">
                 <table class="model-table">
                   <thead><tr><th>${t("usage.colProvider")}</th><th>${t("usage.colCalls")}</th><th>${t("usage.colInput")}</th><th>${t("usage.colOutput")}</th><th>${t("usage.colTotal")}</th></tr></thead>
-                  <tbody>${byProvider.length ? byProvider.map(rowBucket).join("") : `<tr><td colspan="5">${t("usage.noData")}</td></tr>`}</tbody>
+                  <tbody id="usage-by-provider-body">${byProvider.length ? byProvider.map(usageBucketRow).join("") : `<tr><td colspan="5">${t("usage.noData")}</td></tr>`}</tbody>
                 </table>
               </div>
             </div>
@@ -2010,7 +2086,7 @@ function renderUsagePage() {
             <div class="model-table-wrap table-scroll-lg">
               <table class="model-table">
                 <thead><tr><th>${t("usage.colDate")}</th><th>${t("usage.colCalls")}</th><th>${t("usage.colInput")}</th><th>${t("usage.colOutput")}</th><th>${t("usage.colTotal")}</th></tr></thead>
-                <tbody>${byDay.length ? byDay.map(rowBucket).join("") : `<tr><td colspan="5">${t("usage.noData")}</td></tr>`}</tbody>
+                <tbody id="usage-by-day-body">${byDay.length ? byDay.map(usageBucketRow).join("") : `<tr><td colspan="5">${t("usage.noData")}</td></tr>`}</tbody>
               </table>
             </div>
           </div>
@@ -2022,26 +2098,7 @@ function renderUsagePage() {
             <div class="model-table-wrap table-scroll-lg">
               <table class="model-table">
                 <thead><tr><th>${t("usage.colTime")}</th><th>${t("usage.colProvider")}</th><th>${t("usage.colModel")}</th><th>${t("usage.colEndpoint")}</th><th>${t("usage.colInput")}</th><th>${t("usage.colOutput")}</th><th>${t("usage.colTotal")}</th></tr></thead>
-                <tbody>
-                  ${
-                    recent.length
-                      ? recent
-                          .map((e) => {
-                            const time = (e.time || e.Time || "").replace("T", " ").slice(0, 19);
-                            return `<tr>
-                              <td class="model-id">${escapeHtml(time)}</td>
-                              <td>${escapeHtml(e.provider || e.Provider || "")}</td>
-                              <td class="model-id">${escapeHtml(e.model || e.Model || "")}</td>
-                              <td>${escapeHtml(e.endpoint || e.Endpoint || "")}</td>
-                              <td>${e.inputTokens ?? e.InputTokens ?? 0}</td>
-                              <td>${e.outputTokens ?? e.OutputTokens ?? 0}</td>
-                              <td><strong>${e.totalTokens ?? e.TotalTokens ?? 0}</strong></td>
-                            </tr>`;
-                          })
-                          .join("")
-                      : `<tr><td colspan="7">${t("usage.noRecent")}</td></tr>`
-                  }
-                </tbody>
+                <tbody id="usage-recent-body">${recent.length ? recent.map(usageRecentRow).join("") : `<tr><td colspan="7">${t("usage.noRecent")}</td></tr>`}</tbody>
               </table>
             </div>
           </div>
@@ -2054,16 +2111,24 @@ function renderUsagePage() {
 async function loadUsageStats() {
   if (!hasBackend() || typeof GetUsageStats !== "function") {
     usageStats = { total: { calls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 }, byDay: [], byModel: [], byProvider: [], recent: [] };
+    usageStatsSignature = JSON.stringify(usageStats);
+    syncUsageToolbarState();
+    syncUsagePageDom();
     return;
   }
   if (usageBusy) return;
   usageBusy = true;
+  syncUsageToolbarState();
   try {
-    usageStats = await GetUsageStats();
+    const next = await GetUsageStats();
+    usageStats = next || { total: { calls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 }, byDay: [], byModel: [], byProvider: [], recent: [] };
+    const changed = usageStatsChanged(usageStats);
+    if (page === "usage" && changed) syncUsagePageDom();
   } catch (e) {
     toast(errMsg(e), "err");
   } finally {
     usageBusy = false;
+    syncUsageToolbarState();
   }
 }
 
@@ -2072,12 +2137,10 @@ function bindUsageEvents() {
   usageRefreshTimer = setInterval(async () => {
     if (page !== "usage" || document.hidden) return;
     await loadUsageStats();
-    if (page === "usage") render();
   }, 5000);
 
   document.getElementById("btn-usage-refresh")?.addEventListener("click", async () => {
     await loadUsageStats();
-    render();
     toast(t("toast.usageRefreshed"));
   });
   document.getElementById("btn-usage-clear")?.addEventListener("click", async () => {
@@ -2085,8 +2148,10 @@ function bindUsageEvents() {
     try {
       if (!hasBackend()) throw new Error(t("toast.runInWailsShort"));
       usageStats = await ClearUsageStats();
+      usageStatsSignature = JSON.stringify(usageStats || null);
+      syncUsageToolbarState();
+      syncUsagePageDom();
       toast(t("toast.usageCleared"));
-      render();
     } catch (e) {
       toast(errMsg(e), "err");
     }
@@ -2406,13 +2471,14 @@ function readFormInto(p) {
 
 async function applyModelToTool(kind, modelId) {
   if (!hasBackend()) throw new Error(t("toast.runInWailsShort"));
+  const toolName = TOOL_APPS.find(([id]) => id === kind)?.[1] || kind;
   // ensure configs loaded
   if (!toolConfigs[kind]) {
     await loadToolConfigs(false);
   }
   let st = toolConfigs[kind];
   if (!st?.exists) {
-    toast(t("toast.toolConfigMissing", { tool: kind === "codex" ? "Codex" : "Claude" }), "err");
+    toast(t("toast.toolConfigMissing", { tool: toolName }), "err");
     page = "configs";
     localStorage.setItem(PAGE_KEY, page);
     render();
@@ -2683,21 +2749,17 @@ function bindProviderEvents() {
         toast(errMsg(e), "err");
       }
     });
-    row.querySelector('[data-act="to-codex"]')?.addEventListener("click", async () => {
-      try {
-        const st = await applyModelToTool("codex", mid);
-        toast(tb(st.message) || t("toast.wroteCodex", { id: mid }));
-      } catch (e) {
-        toast(errMsg(e), "err");
-      }
-    });
-    row.querySelector('[data-act="to-claude"]')?.addEventListener("click", async () => {
-      try {
-        const st = await applyModelToTool("claude", mid);
-        toast(tb(st.message) || t("toast.wroteClaude", { id: mid }));
-      } catch (e) {
-        toast(errMsg(e), "err");
-      }
+    row.querySelectorAll('[data-act="to-tool"]').forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const kind = btn.dataset.kind;
+        const name = TOOL_APPS.find(([id]) => id === kind)?.[1] || kind;
+        try {
+          const st = await applyModelToTool(kind, mid);
+          toast(tb(st.message) || t("toast.wroteTool", { tool: name, id: mid }));
+        } catch (e) {
+          toast(errMsg(e), "err");
+        }
+      });
     });
   });
 }

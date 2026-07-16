@@ -8,6 +8,13 @@ import (
 	"testing"
 )
 
+type takeoverCase struct {
+	kind         string
+	path         string
+	original     string
+	managedProbe string
+}
+
 func mustJSON(t *testing.T, v any) []byte {
 	t.Helper()
 	b, err := json.MarshalIndent(v, "", "  ")
@@ -269,8 +276,8 @@ func TestRepeatedTakeoverDoesNotOverwriteOriginalTakeoverBackup(t *testing.T) {
 	if string(firstBackup) != original {
 		t.Fatalf("first takeover backup differs:\n%s", firstBackup)
 	}
-	if _, err := a.InjectGateway("chatgpt"); err != nil {
-		t.Fatal(err)
+	if _, err := a.InjectGateway("chatgpt"); err == nil {
+		t.Fatal("expected repeated takeover to be rejected")
 	}
 	secondBackup, err := os.ReadFile(takeoverBackupFile(ToolCodex, path))
 	if err != nil {
@@ -434,5 +441,148 @@ func TestRestoreDefaultConfigRestoresAndCleansManagedEnvironment(t *testing.T) {
 	}
 	if string(secrets) != `{"OLD_PROVIDER_KEY":"old"}` {
 		t.Fatalf("secrets=%s", secrets)
+	}
+}
+
+func TestRollbackCleansTakeoverArtifactsForAllKinds(t *testing.T) {
+	cases := []takeoverCase{
+		{
+			kind:         "chatgpt",
+			path:         filepath.Join(".codex", "config.toml"),
+			original:     "model_provider = \"openai\"\nmodel = \"gpt-5.5\"\n\n[model_providers.openai]\nname = \"OpenAI\"\nbase_url = \"https://api.openai.com/v1\"\n",
+			managedProbe: "model_provider = \"aigateway\"",
+		},
+		{
+			kind:         "claude",
+			path:         filepath.Join(".claude", "settings.json"),
+			original:     `{"model":"original","env":{"OLD_KEY":"old"}}` + "\n",
+			managedProbe: `"OPENAI_BASE_URL": "http://127.0.0.1:`,
+		},
+		{
+			kind:         "openclaw",
+			path:         filepath.Join(".openclaw", "openclaw.json"),
+			original:     `{"models":{"providers":{"openai":{"baseUrl":"https://api.openai.com/v1","apiKey":"old","api":"openai-completions","models":[{"id":"m","name":"m"}]}}},"agents":{"defaults":{"model":{"primary":"openai/m","fallbacks":[]}}},"env":{"vars":{"OPENAI_BASE_URL":"https://api.openai.com/v1","OPENAI_API_KEY":"old"}}}` + "\n",
+			managedProbe: `aigateway`,
+		},
+		{
+			kind:         "harness",
+			path:         filepath.Join(".harness", "config.yaml"),
+			original:     "model: original\nprovider: openai\nbase_url: https://api.openai.com/v1\napi_key: old\n",
+			managedProbe: "base_url: \"http://127.0.0.1:",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.kind, func(t *testing.T) {
+			tmp := t.TempDir()
+			t.Setenv("HOME", tmp)
+			t.Setenv("USERPROFILE", tmp)
+			closeDB()
+			defer closeDB()
+
+			path := filepath.Join(tmp, tc.path)
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(tc.original), 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			a := NewApp()
+			if _, err := a.SetToolConfigPath(tc.kind, path); err != nil {
+				t.Fatal(err)
+			}
+			a.proxy = newProxyServer()
+			a.proxy.cfg.Port = 0
+
+			st, err := a.InjectGateway(tc.kind)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !st.Managed {
+				t.Fatalf("expected managed after takeover: %+v", st)
+			}
+			managed, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(managed), tc.managedProbe) {
+				t.Fatalf("takeover did not rewrite config: %s", managed)
+			}
+			if _, ok := loadTakeoverMeta(normalizeToolKind(tc.kind), path); !ok {
+				t.Fatalf("missing takeover meta after takeover for %s", tc.kind)
+			}
+
+			st, err = a.RollbackGateway(tc.kind)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if st.Managed {
+				t.Fatalf("expected un-managed after rollback: %+v", st)
+			}
+			restored, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(restored) != tc.original {
+				t.Fatalf("restored config differs for %s:\n got: %s\nwant: %s", tc.kind, restored, tc.original)
+			}
+			if _, ok := loadTakeoverMeta(normalizeToolKind(tc.kind), path); ok {
+				t.Fatalf("takeover meta should be deleted after rollback for %s", tc.kind)
+			}
+			if _, err := os.Stat(takeoverBackupFile(normalizeToolKind(tc.kind), path)); !os.IsNotExist(err) {
+				t.Fatalf("takeover backup should be deleted after rollback for %s, err=%v", tc.kind, err)
+			}
+			if _, err := os.Stat(takeoverEnvironmentBackupPath(normalizeToolKind(tc.kind), path)); !os.IsNotExist(err) {
+				t.Fatalf("takeover env backup should be deleted after rollback for %s, err=%v", tc.kind, err)
+			}
+		})
+	}
+}
+
+func TestInjectGatewayRefusesToOverwriteManagedConfigWithoutMeta(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
+	closeDB()
+	defer closeDB()
+
+	path := filepath.Join(tmp, ".codex", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := "model_provider = \"openai\"\nmodel = \"gpt-5.5\"\n\n[model_providers.openai]\nname = \"OpenAI\"\nbase_url = \"https://api.openai.com/v1\"\n"
+	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	a := NewApp()
+	if _, err := a.SetToolConfigPath("chatgpt", path); err != nil {
+		t.Fatal(err)
+	}
+	a.proxy = newProxyServer()
+	a.proxy.cfg.Port = 0
+	if _, err := a.InjectGateway("chatgpt"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate state loss: managed config remains, but takeover metadata disappears.
+	_ = os.Remove(takeoverMetaFile(ToolCodex, path))
+	_ = os.Remove(takeoverBackupFile(ToolCodex, path))
+	_ = os.Remove(takeoverEnvironmentBackupPath(ToolCodex, path))
+
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.InjectGateway("chatgpt"); err == nil {
+		t.Fatal("expected takeover to be rejected when managed state exists without metadata")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("managed config should remain unchanged when takeover is refused:\n got: %s\nwant: %s", after, before)
 	}
 }
