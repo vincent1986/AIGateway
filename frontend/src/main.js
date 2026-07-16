@@ -98,6 +98,7 @@ function confirmAction(message, title = "") {
  * @type {Array<{
  *   id: string, name: string, nameKey?: string|null, baseUrl: string, color: string,
  *   useProxy: boolean, formatStandard?: string, apiKey?: string, keyRequired?: boolean,
+ *   models?: Model[],
  *   local?: boolean, region?: string, blurbKey?: string
  * }>}
  */
@@ -115,7 +116,7 @@ const PRESETS = [
   { id: "yi", nameKey: "preset.yi", name: "零一万物", baseUrl: "https://api.lingyiwanwu.com/v1", color: "#a371f7", useProxy: true, formatStandard: "openai", keyRequired: true, region: "cn" },
   { id: "groq", name: "Groq", baseUrl: "https://api.groq.com/openai/v1", color: "#f85149", useProxy: true, formatStandard: "openai", keyRequired: true, region: "global" },
   { id: "openrouter", name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", color: "#7c5cff", useProxy: true, formatStandard: "openai", keyRequired: true, region: "global" },
-  { id: "xai", name: "xAI Grok", baseUrl: "https://api.x.ai/v1", color: "#e6edf3", useProxy: true, formatStandard: "openai", keyRequired: true, region: "global" },
+  { id: "xai", nameKey: "preset.grok", name: "xAI Grok", baseUrl: "https://api.x.ai/v1", color: "#e6edf3", useProxy: true, formatStandard: "openai", keyRequired: true, region: "global", blurbKey: "preset.blurb.grok", models: [{ id: "grok-4.5", name: "Grok 4.5", enabled: true, isDefault: true, ownedBy: "xai" }] },
   { id: "together", name: "Together", baseUrl: "https://api.together.xyz/v1", color: "#3fb950", useProxy: true, formatStandard: "openai", keyRequired: true, region: "global" },
   { id: "fireworks", name: "Fireworks", baseUrl: "https://api.fireworks.ai/inference/v1", color: "#d29922", useProxy: true, formatStandard: "openai", keyRequired: true, region: "global" },
   { id: "custom", nameKey: "preset.custom", name: "自定义", baseUrl: "", color: "#8b9cb3", useProxy: true, formatStandard: "openai", keyRequired: true, region: "custom", blurbKey: "preset.blurb.custom" },
@@ -3018,7 +3019,7 @@ function openAddModal() {
       color,
       useProxy,
       formatStandard,
-      models: [],
+      models: (preset.models || []).map((m) => ({ ...m })),
       tokenPackages: [],
     };
     providers.push(item);
