@@ -1,4 +1,4 @@
-b55bffeff2b74fe169889379f1677d4c99b9038156e990756f835ddb792d7d71  AIGateway-v2.0.5-macos-amd64.zip
-639ce832260ce13521a8b02a2d6562e3f43bc0a1f4fe6de3b6900b39846e28eb  AIGateway-v2.0.5-macos-arm64.zip
-4e2b54ed553fd407b6bd4a656bec757ed69482a1196e11e3e85ec7c6f3478fd3  AIGateway-v2.0.5-windows-amd64-portable.zip
-ddaa0c1658715dc841c7afb446428b52bdd1d14bc501253cec02e8e0f565be9e  AIGateway-v2.0.5-windows-amd64-setup.exe
+402f324db9b625f3855747e048e5a5e3dbd5e07802ff751f9d8660abf75eb3c2  AIGateway-v2.0.5-macos-amd64.zip
+8989c45879d82d9d05a18878a6024dc6f5811c6569177dec9a946517884f2461  AIGateway-v2.0.5-macos-arm64.zip
+7a0bfe7ce1cf80a53c48c4267e842172b05e002b21c5108d5f853a4cb5897258  AIGateway-v2.0.5-windows-amd64-portable.zip
+2eee968f2fa8bbdb09004f0ee301be5c9c257725b34294384072efebdace59ec  AIGateway-v2.0.5-windows-amd64-setup.exe

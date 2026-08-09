@@ -2230,8 +2230,10 @@ function bindConfigEvents() {
       try {
         if (!hasBackend()) throw new Error(t("toast.runInWailsShort"));
         const res = await LaunchOpenClaw();
+        const ready = !!(res?.ready || res?.Ready);
         const url = res?.dashboardUrl || res?.DashboardURL || "";
-        if (url) {
+        // Only open the Control UI after the gateway reports ready.
+        if (ready && url) {
           try {
             BrowserOpenURL(url);
           } catch (_) {

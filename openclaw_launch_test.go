@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -146,28 +147,35 @@ func TestLaunchOpenClawAlreadyRunning(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(`{"gateway":{"mode":"local","port":18789},"models":{"providers":{"aigateway":{"baseUrl":"http://127.0.0.1:18080/v1"}}}}`+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(`{"gateway":{"mode":"local","port":18789,"auth":{"mode":"token","token":"test-token-abc"}},"models":{"providers":{"aigateway":{"baseUrl":"http://127.0.0.1:18080/v1"}}}}`+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("OPENCLAW_GATEWAY_TOKEN", "")
 
 	oldLook := lookPathFn
 	oldDial := dialOpenClawFn
 	oldRun := runOpenClawCommandFn
 	oldStart := startDetachedFn
+	oldReady := openClawReadyCheckFn
 	t.Cleanup(func() {
 		lookPathFn = oldLook
 		dialOpenClawFn = oldDial
 		runOpenClawCommandFn = oldRun
 		startDetachedFn = oldStart
+		openClawReadyCheckFn = oldReady
 	})
 	lookPathFn = func(string) (string, error) { return "/bin/openclaw", nil }
 	dialOpenClawFn = func(int) bool { return true }
-	runOpenClawCommandFn = func(string, time.Duration, ...string) (string, error) {
-		t.Fatal("should not run CLI when already reachable")
+	openClawReadyCheckFn = func(string, int) bool { return true }
+	runOpenClawCommandFn = func(_ string, _ time.Duration, args ...string) (string, error) {
+		if len(args) > 0 && args[0] == "dashboard" {
+			return "OpenClaw does not recognize option \"--json\"", fmt.Errorf("flag")
+		}
+		t.Fatal("should not run start CLI when already ready")
 		return "", nil
 	}
 	startDetachedFn = func(string, ...string) error {
-		t.Fatal("should not start detached when already reachable")
+		t.Fatal("should not start detached when already ready")
 		return nil
 	}
 
@@ -181,11 +189,14 @@ func TestLaunchOpenClawAlreadyRunning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !res.AlreadyRunning || res.Started {
+	if !res.AlreadyRunning || res.Started || !res.Ready {
 		t.Fatalf("result=%+v", res)
 	}
-	if res.DashboardURL != "http://127.0.0.1:18789" {
+	if res.DashboardURL != "http://127.0.0.1:18789/#token=test-token-abc" {
 		t.Fatalf("url=%q", res.DashboardURL)
+	}
+	if !strings.Contains(res.Message, "token") {
+		t.Fatalf("message should mention token: %s", res.Message)
 	}
 }
 
@@ -208,20 +219,23 @@ func TestLaunchOpenClawStartsDetachedWhenServiceFails(t *testing.T) {
 	oldDial := dialOpenClawFn
 	oldRun := runOpenClawCommandFn
 	oldStart := startDetachedFn
+	oldReady := openClawReadyCheckFn
 	t.Cleanup(func() {
 		lookPathFn = oldLook
 		dialOpenClawFn = oldDial
 		runOpenClawCommandFn = oldRun
 		startDetachedFn = oldStart
+		openClawReadyCheckFn = oldReady
 	})
 
 	lookPathFn = func(string) (string, error) { return "/bin/openclaw", nil }
 	calls := 0
-	dialOpenClawFn = func(int) bool {
+	openClawReadyCheckFn = func(string, int) bool {
 		calls++
 		// first checks before start fail; after detached start succeed
 		return calls >= 3
 	}
+	dialOpenClawFn = func(int) bool { return false }
 	runOpenClawCommandFn = func(bin string, _ time.Duration, args ...string) (string, error) {
 		if len(args) >= 2 && args[0] == "gateway" && args[1] == "start" {
 			return "service not installed", os.ErrNotExist
@@ -247,7 +261,7 @@ func TestLaunchOpenClawStartsDetachedWhenServiceFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !started || !res.Started || res.AlreadyRunning {
+	if !started || !res.Started || res.AlreadyRunning || !res.Ready {
 		t.Fatalf("started=%v result=%+v", started, res)
 	}
 	b, err := os.ReadFile(path)
@@ -259,11 +273,45 @@ func TestLaunchOpenClawStartsDetachedWhenServiceFails(t *testing.T) {
 	}
 }
 
-func TestOpenClawStatusLooksRunning(t *testing.T) {
-	if !openClawStatusLooksRunning(`{"service":{"running":true}}`) {
-		t.Fatal("json running")
+func TestOpenClawStatusJSONReady(t *testing.T) {
+	if !openClawStatusJSONReady(`noise {"rpc":{"ok":true},"service":{"runtime":{"status":"running"}}}`) {
+		t.Fatal("rpc.ok should mean ready")
 	}
-	if openClawStatusLooksRunning(`Gateway is not running`) {
-		t.Fatal("not running")
+	if openClawStatusJSONReady(`{"rpc":{"ok":false},"service":{"runtime":{"status":"stopped"}}}`) {
+		t.Fatal("stopped should not be ready")
+	}
+}
+
+func TestOpenClawDashboardURLWithToken(t *testing.T) {
+	got := openClawDashboardURLWithToken("http://127.0.0.1:18789/", "ab/c")
+	want := "http://127.0.0.1:18789/#token=ab%2Fc"
+	if got != want {
+		t.Fatalf("got=%q want=%q", got, want)
+	}
+}
+
+func TestParseOpenClawDashboardJSONURL(t *testing.T) {
+	out := `{"ok":true,"browserUrl":"http://127.0.0.1:18789/#token=boot","url":"http://127.0.0.1:18789/#token=shared"}`
+	if got := parseOpenClawDashboardJSONURL(out); got != "http://127.0.0.1:18789/#token=boot" {
+		t.Fatalf("got=%q", got)
+	}
+	if got := parseOpenClawDashboardJSONURL(`{"ok":false,"reason":"down"}`); got != "" {
+		t.Fatalf("expected empty, got=%q", got)
+	}
+}
+
+func TestReadOpenClawGatewayAuthToken(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "openclaw.json")
+	if err := os.WriteFile(path, []byte(`{"gateway":{"auth":{"token":"from-file"}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OPENCLAW_GATEWAY_TOKEN", "")
+	if got := readOpenClawGatewayAuthToken(path); got != "from-file" {
+		t.Fatalf("got=%q", got)
+	}
+	t.Setenv("OPENCLAW_GATEWAY_TOKEN", "from-env")
+	if got := readOpenClawGatewayAuthToken(path); got != "from-env" {
+		t.Fatalf("env override got=%q", got)
 	}
 }

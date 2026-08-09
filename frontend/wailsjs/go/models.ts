@@ -173,6 +173,7 @@ export namespace main {
 	    configPath: string;
 	    alreadyRunning: boolean;
 	    started: boolean;
+	    ready: boolean;
 	    dashboardUrl: string;
 	    message: string;
 	    managed: boolean;
@@ -187,6 +188,7 @@ export namespace main {
 	        this.configPath = source["configPath"];
 	        this.alreadyRunning = source["alreadyRunning"];
 	        this.started = source["started"];
+	        this.ready = source["ready"];
 	        this.dashboardUrl = source["dashboardUrl"];
 	        this.message = source["message"];
 	        this.managed = source["managed"];
