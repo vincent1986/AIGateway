@@ -36,6 +36,7 @@ import {
   ReorderModelGroupRoutes,
   InjectGateway,
   RollbackGateway,
+  LaunchOpenClaw,
 } from "../wailsjs/go/main/App";
 import { BrowserOpenURL } from "../wailsjs/runtime/runtime";
 
@@ -1025,6 +1026,13 @@ function renderAppCard(st) {
           <button class="btn" data-act="rollback-gw" data-kind="${kind}" ${busy || !hasTakeoverBackup ? "disabled" : ""}>
             ${t("apps.rollback")}
           </button>
+          ${
+            kind === "openclaw"
+              ? `<button class="btn" data-act="launch-openclaw" data-kind="${kind}" ${busy ? "disabled" : ""} title="${escapeAttr(t("apps.launchOpenClawHint"))}">
+                  ${busy ? `<span class="spinner"></span> ` : ""}${escapeHtml(t("apps.launchOpenClaw"))}
+                </button>`
+              : ""
+          }
           <button class="btn btn-sm" data-act="scan" data-kind="${kind}" ${busy ? "disabled" : ""}>${t("configs.autoScan")}</button>
           <button class="btn btn-sm" data-act="pick" data-kind="${kind}" ${busy ? "disabled" : ""}>${t("configs.pick")}</button>
           <button class="btn btn-sm" data-act="reveal" data-kind="${kind}" ${!st.path ? "disabled" : ""}>${escapeHtml(revealLabelForOs(systemInfo.os))}</button>
@@ -1638,7 +1646,7 @@ function renderDetail(p) {
                   <th>${t("detail.colId")}</th>
                   <th>${t("detail.colName")}</th>
                   <th>${t("detail.colStatus")}</th>
-                  <th style="width:280px;text-align:right">${t("detail.colActions")}</th>
+                  <th style="width:180px;text-align:right">${t("detail.colActions")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1655,10 +1663,10 @@ function renderDetail(p) {
                     </td>
                     <td>
                       <div class="row-actions">
-                        ${TOOL_APPS.map(
-                          ([kind, name]) =>
-                            `<button class="btn btn-sm" data-act="to-tool" data-kind="${escapeAttr(kind)}" title="${escapeAttr(name)}">${escapeHtml(name.replace(" Code", "").replace(" CLI", ""))}</button>`
-                        ).join("")}
+                        <select class="select" data-act="to-tool" title="${escapeAttr(t("detail.applyToTitle"))}" style="max-width:140px;padding:4px 8px;font-size:12px">
+                          <option value="">${escapeHtml(t("detail.applyTo"))}</option>
+                          ${TOOL_APPS.map(([kind, name]) => `<option value="${escapeAttr(kind)}">${escapeHtml(name)}</option>`).join("")}
+                        </select>
                         <button class="btn btn-sm btn-ghost" data-act="remove">${t("detail.remove")}</button>
                       </div>
                     </td>
@@ -2214,6 +2222,33 @@ function bindConfigEvents() {
     });
   });
 
+  document.querySelectorAll("[data-act='launch-openclaw']").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const kind = btn.dataset.kind || "openclaw";
+      configsBusy = kind;
+      render();
+      try {
+        if (!hasBackend()) throw new Error(t("toast.runInWailsShort"));
+        const res = await LaunchOpenClaw();
+        const url = res?.dashboardUrl || res?.DashboardURL || "";
+        if (url) {
+          try {
+            BrowserOpenURL(url);
+          } catch (_) {
+            /* ignore */
+          }
+        }
+        toast(tb(res?.message || res?.Message) || t("toast.openClawLaunched"));
+        await loadToolConfigs(false);
+      } catch (e) {
+        toast(errMsg(e), "err");
+      } finally {
+        configsBusy = "";
+        render();
+      }
+    });
+  });
+
   document.querySelectorAll("[data-act='scan']").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const kind = btn.dataset.kind;
@@ -2749,17 +2784,18 @@ function bindProviderEvents() {
         toast(errMsg(e), "err");
       }
     });
-    row.querySelectorAll('[data-act="to-tool"]').forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const kind = btn.dataset.kind;
-        const name = TOOL_APPS.find(([id]) => id === kind)?.[1] || kind;
-        try {
-          const st = await applyModelToTool(kind, mid);
-          toast(tb(st.message) || t("toast.wroteTool", { tool: name, id: mid }));
-        } catch (e) {
-          toast(errMsg(e), "err");
-        }
-      });
+    row.querySelector('[data-act="to-tool"]')?.addEventListener("change", async (ev) => {
+      const sel = ev.currentTarget;
+      const kind = sel.value;
+      if (!kind) return;
+      const name = TOOL_APPS.find(([id]) => id === kind)?.[1] || kind;
+      sel.value = "";
+      try {
+        const st = await applyModelToTool(kind, mid);
+        toast(tb(st.message) || t("toast.wroteTool", { tool: name, id: mid }));
+      } catch (e) {
+        toast(errMsg(e), "err");
+      }
     });
   });
 }

@@ -44,6 +44,8 @@ export function GetUsageStats():Promise<main.UsageStats>;
 
 export function InjectGateway(arg1:string):Promise<main.ToolConfigStatus>;
 
+export function LaunchOpenClaw():Promise<main.OpenClawLaunchResult>;
+
 export function ListModelGroups():Promise<Array<main.ModelGroupView>>;
 
 export function ListProviders():Promise<Array<main.Provider>>;

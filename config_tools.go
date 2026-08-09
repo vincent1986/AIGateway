@@ -287,7 +287,7 @@ func fillManagedInfo(st *ToolConfigStatus, d ToolDriver) {
 	case ToolCodex:
 		st.Managed = strings.EqualFold(st.ModelProvider, gatewayProviderID) || strings.EqualFold(st.ModelProvider, "codex_proxy")
 	case ToolClaude:
-		st.Managed = fileContainsAny(st.Path, "127.0.0.1:18080", "aigateway")
+		st.Managed = isAIGatewayManagedFile(st.Path)
 	}
 }
 

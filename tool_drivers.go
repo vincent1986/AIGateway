@@ -238,12 +238,7 @@ func (d *claudeDriver) InjectGateway(configPath, gatewayURL, apiKey string) erro
 	return writeFileAtomic(configPath, next)
 }
 func (d *claudeDriver) IsManaged(configPath string) bool {
-	b, err := os.ReadFile(configPath)
-	if err != nil {
-		return false
-	}
-	s := string(b)
-	return strings.Contains(s, "127.0.0.1:") || strings.Contains(s, "localhost:") || strings.Contains(s, "aigateway")
+	return isAIGatewayManagedFile(configPath)
 }
 
 // --- OpenClaw ---
@@ -303,7 +298,7 @@ func (d *openclawDriver) InjectGateway(configPath, gatewayURL, apiKey string) er
 	return injectOpenClawGateway(configPath, gatewayURL, apiKey, appProxyModel(ToolOpenClaw), gatewayProviderID)
 }
 func (d *openclawDriver) IsManaged(configPath string) bool {
-	return fileContainsAny(configPath, "127.0.0.1:", "localhost:", "aigateway")
+	return isAIGatewayManagedFile(configPath)
 }
 
 // unmarshalOpenClawJSON5 accepts the JSON5 forms used by OpenClaw. The
@@ -432,7 +427,7 @@ func (d *harnessDriver) InjectGateway(configPath, gatewayURL, apiKey string) err
 	return injectGenericModelGateway(configPath, gatewayURL, apiKey, appProxyModel(ToolHarness), gatewayProviderID)
 }
 func (d *harnessDriver) IsManaged(configPath string) bool {
-	return fileContainsAny(configPath, "127.0.0.1:", "localhost:", "aigateway")
+	return isAIGatewayManagedFile(configPath)
 }
 
 // --- Grok CLI ---
@@ -507,7 +502,7 @@ func (d *grokDriver) InjectGateway(configPath, gatewayURL, apiKey string) error 
 	return writeFileAtomic(configPath, next)
 }
 func (d *grokDriver) IsManaged(configPath string) bool {
-	return fileContainsAny(configPath, "127.0.0.1:", "localhost:", "aigateway")
+	return isAIGatewayManagedFile(configPath)
 }
 
 func injectJSONBaseURL(configPath, gatewayURL, apiKey string) error {
@@ -715,11 +710,21 @@ func fileContainsAny(path string, needles ...string) bool {
 	if err != nil {
 		return false
 	}
-	s := string(b)
+	return contentContainsAny(string(b), needles...)
+}
+
+func contentContainsAny(content string, needles ...string) bool {
 	for _, n := range needles {
-		if strings.Contains(s, n) {
+		if n != "" && strings.Contains(content, n) {
 			return true
 		}
 	}
 	return false
+}
+
+// isAIGatewayManagedFile reports whether a tool config was written by AIGateway
+// takeover / alias injection. Match product markers only — never bare
+// 127.0.0.1:/localhost:, which false-positive on Ollama and other local APIs.
+func isAIGatewayManagedFile(path string) bool {
+	return fileContainsAny(path, "aigateway", "aiSwitchModel", "AIGateway")
 }

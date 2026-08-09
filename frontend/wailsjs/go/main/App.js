@@ -86,6 +86,10 @@ export function InjectGateway(arg1) {
   return window['go']['main']['App']['InjectGateway'](arg1);
 }
 
+export function LaunchOpenClaw() {
+  return window['go']['main']['App']['LaunchOpenClaw']();
+}
+
 export function ListModelGroups() {
   return window['go']['main']['App']['ListModelGroups']();
 }

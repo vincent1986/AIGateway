@@ -470,6 +470,12 @@ func TestRollbackCleansTakeoverArtifactsForAllKinds(t *testing.T) {
 			original:     "model: original\nprovider: openai\nbase_url: https://api.openai.com/v1\napi_key: old\n",
 			managedProbe: "base_url: \"http://127.0.0.1:",
 		},
+		{
+			kind:         "grok",
+			path:         filepath.Join(".grok", "config.toml"),
+			original:     "[model.\"old\"]\nmodel = \"old\"\nbase_url = \"https://api.x.ai/v1\"\nname = \"xAI\"\n\n[models]\ndefault = \"old\"\n",
+			managedProbe: "aiSwitchModel-grok",
+		},
 	}
 
 	for _, tc := range cases {

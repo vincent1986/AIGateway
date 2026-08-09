@@ -183,6 +183,27 @@ func TestDriverApplyModelUsesFormatSpecificAdapters(t *testing.T) {
 	}
 }
 
+func TestIsManagedIgnoresLocalOllamaAndDetectsGatewayMarkers(t *testing.T) {
+	tmp := t.TempDir()
+	ollama := filepath.Join(tmp, "ollama.json")
+	managed := filepath.Join(tmp, "managed.json")
+	if err := os.WriteFile(ollama, []byte(`{"env":{"OPENAI_BASE_URL":"http://127.0.0.1:11434/v1"},"model":"llama3"}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(managed, []byte(`{"env":{"OPENAI_BASE_URL":"http://127.0.0.1:19090/v1"},"model":"aiSwitchModel-claude"}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if (&claudeDriver{}).IsManaged(ollama) {
+		t.Fatal("local Ollama URL must not count as AIGateway managed")
+	}
+	if !(&claudeDriver{}).IsManaged(managed) {
+		t.Fatal("aiSwitchModel alias should count as AIGateway managed even on non-default port")
+	}
+	if (&openclawDriver{}).IsManaged(ollama) || (&harnessDriver{}).IsManaged(ollama) || (&grokDriver{}).IsManaged(ollama) {
+		t.Fatal("Ollama false-positive across drivers")
+	}
+}
+
 func TestGrokDriverInjectGateway(t *testing.T) {
 	tmp := t.TempDir()
 	p := filepath.Join(tmp, "config.toml")

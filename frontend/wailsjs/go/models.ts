@@ -168,6 +168,30 @@ export namespace main {
 	        this.provider = source["provider"];
 	    }
 	}
+	export class OpenClawLaunchResult {
+	    binary: string;
+	    configPath: string;
+	    alreadyRunning: boolean;
+	    started: boolean;
+	    dashboardUrl: string;
+	    message: string;
+	    managed: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new OpenClawLaunchResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.binary = source["binary"];
+	        this.configPath = source["configPath"];
+	        this.alreadyRunning = source["alreadyRunning"];
+	        this.started = source["started"];
+	        this.dashboardUrl = source["dashboardUrl"];
+	        this.message = source["message"];
+	        this.managed = source["managed"];
+	    }
+	}
 	export class TokenPackage {
 	    id: string;
 	    name: string;

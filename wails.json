@@ -13,7 +13,7 @@
   "info": {
     "companyName": "Mars Waller",
     "productName": "AIGateway",
-    "productVersion": "2.0.4",
+    "productVersion": "2.0.5",
     "copyright": "Copyright © 2026 Mars Waller",
     "comments": "AI model manager for Codex, ChatGPT, Claude, OpenClaw, Harness, Grok CLI — save tokens, find cheaper providers"
   }
